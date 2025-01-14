@@ -1,0 +1,22 @@
+<li class="nav-item">
+</li>
+<li class="nav-item">
+</li>
+{% if request.user.is_anonymous %}
+  <a class="nav-link " href="{% url 'login' %}" role="button" aria-expanded="false">ログイン</a>
+{% else %}
+  <a class="nav-link " href="{% url 'notice:index' %}" role="button" aria-expanded="false">お知らせ</a>
+  {#  <a class="nav-link " href="{% url 'resource:resource' %}" role="button" aria-expanded="false">シフト記入</a>#}
+  {#  <a class="nav-link " href="{% url 'assignment:search' %}" role="button" aria-expanded="false">設定</a>#}
+  <li class="nav-item dropdown">
+    <a class="nav-link dropdown-toggle" href="#" id="dropdown01" role="button" data-bs-toggle="dropdown"
+       aria-expanded="false">管理メニュー</a>
+    <div class="dropdown-menu" aria-labelledby="dropdown01">
+      {% if request.user.is_staff %}
+        <a class="dropdown-item" href="{% url 'admin:index' %}">通知設定</a>
+        <a class="dropdown-item" href="{% url 'admin:index' %}">管理者画面</a>
+      {% endif %}
+      {#      <a class="dropdown-item" href="{% url 'user_settings' %}">ユーザ設定</a>#}
+    </div>
+  </li>
+{% endif %}

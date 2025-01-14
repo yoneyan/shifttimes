@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1 class="h3 mb-3 font-weight-normal">ログインが必要です</h1>
+    <div class="container">
+        <div class="p-3 border bg-light">
+            <form method="post" class="needs-validation" novalidate>
+                <div class="row g-2">
+                    <div class="col-3">
+                        <label for="id_username">{{ form.username.label }}</label>
+                        {{ form.username }}
+                    </div>
+                    <div class="col-3">
+                        <label for="id_password">{{ form.password.label }}</label>
+                        {{ form.password }}
+                    </div>
+                    <div class="col-4">
+                    </div>
+                </div>
+                <br/>
+                <button class="btn btn-primary" type="submit">ログイン</button>
+                {% csrf_token %}
+            </form>
+        </div>
+    </div>
+    {#    <form class="form-signin">#}
+    {#        <h1 class="h3 mb-3 font-weight-normal">ログインが必要です</h1>#}
+    {#        <label for="inputId" class="sr-only">ID</label>#}
+    {#        <input type="text" id="inputId" class="form-control" placeholder="ID" required autofocus>#}
+    {#        <label for="inputPassword" class="sr-only">Password</label>#}
+    {#        <input type="password" id="inputPassword" class="form-control" placeholder="Password" required>#}
+    {#        <br/>#}
+    {#        <button class="btn btn-lg btn-primary btn-block" type="submit">Sign in</button>#}
+    {#    </form>#}
+{% endblock content %}
+
+{% block javascript %}
+{% endblock javascript %}

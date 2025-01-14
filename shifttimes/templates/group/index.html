@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block content %}
+  <div class="container">
+    <div class="row">
+      <div class="container py-4 mb-auto">
+        <div class="h-900 p-2 rounded-3">
+          <h2 class="card-title"><b>グループ一覧</b></h2>
+          <br/>
+          {% if request.user.allow_group_add %}
+            <p><b>下記のより、新規申請してください。</b></p>
+            <a class="btn btn-primary"
+               href="{% url 'custom_auth_group:add' %}" role="button"
+               aria-expanded="false">新規申請</a>
+          {% else %}
+            <p>
+              <b>グループの追加申請は原則1つまでです</b>
+            </p>
+          {% endif %}
+          <br/>
+          <br/>
+          {% if groups %}
+            {% for group in groups %}
+              <div class="card">
+                <div class="card-header">
+                  ID: {{ group.data.id }}
+                  作成日: {{ group.data.created_at }}
+                </div>
+                <div class="card-body">
+                  <h5 class="card-title">{{ group.data.name }}</h5>
+                  <p class="card-text">
+                    会員種別: <b>{{ group.data.get_membership_type_display }}</b><br/>
+                  {% if group.data.membership_type < 50 %}
+                    有効期限: <b>{{ group.data.membership_expired_at }}まで</b>
+                  {% else %}
+                    課金情報: <b>課金ステータス無効</b>
+                  {% endif %}
+                  </p>
+                  <div class="container">
+                    <div>
+                      <a class="btn btn-primary btn-sm"
+                         href="{% url 'custom_auth_group:edit' group.data.id %}">情報閲覧・修正</a>
+                      <a class="btn btn-primary btn-sm"
+                         href="{% url 'custom_auth_group:permission' group.data.id %}">権限設定</a>
+                      <a class="btn btn-primary btn-sm"
+                         href="{% url 'custom_auth_group:payment' group.data.id %}">会費支払い情報</a>
+                      <a class="btn btn-primary btn-sm"
+                         href="{% url 'service:index' group.data.id %}">サービス情報</a>
+                      <a class="btn btn-primary btn-sm"
+                         href="{% url 'jpnic:jpnic_index' group.data.id %}">JPNIC情報</a>
+                      <br/>
+                      <br/>
+                      {% if e.administrator %}
+                        <form method="post">
+                          {% csrf_token %}
+                          <input type="text" value={{ group.data.id }} name="group_id" hidden>
+                          {% if group.data.is_charge and group.data.stripe_customer_id and not group.data.stripe_subscription_id %}
+                            <a class="btn btn-primary btn-sm"
+                               href="{% url 'group_payment' group.data.id %}">会費のお支払いはこちらから</a>
+                          {% endif %}
+                          {% if not group.data.stripe_customer_id %}
+                            <button type="submit" name="id"
+                                    value="create_stripe_customer"
+                                    class="btn btn-primary btn-sm">
+                              会費のお支払いはこちらから
+                            </button>
+                          {% endif %}
+                          {% if group.data.is_charge and group.data.stripe_customer_id %}
+                            <button type="submit" name="id"
+                                    value="getting_portal"
+                                    class="btn btn-primary btn-sm">
+                              プランの変更・キャンセル
+                            </button>
+                          {% endif %}
+                        </form>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+                <div class="card-footer">
+                  {% if group.data.is_pass %}
+                    <span class="badge bg-primary">審査済</span>
+                  {% else %}
+                    <span class="badge bg-danger">未審査</span>{% endif %}
+                  {% if group.administrator %}
+                    <span class="badge bg-success">管理者権限</span>{% endif %}
+                  <span
+                      class="badge bg-secondary">Service: {{ group.data.service_set.count }}</span>
+                </div>
+              </div>
+              <br/>
+            {% endfor %}
+          {% else %}
+            <p>グループがありません</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
