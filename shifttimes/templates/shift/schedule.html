@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}開講スケジュール | {% endblock %}
+{% block page_title %}開講スケジュール{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }}</p>
+{% endblock %}
+{% block page_actions %}
+  {% if is_admin and settings_url %}
+    <a class="btn btn-primary btn-sm text-nowrap" href="{{ settings_url }}">
+      <i class="bi bi-gear me-1"></i>設定
+    </a>
+  {% endif %}
+  <a class="btn btn-outline-secondary btn-sm text-nowrap" href="{% url 'shift:index' %}">
+    <i class="bi bi-arrow-left me-1"></i>一覧へ戻る
+  </a>
+{% endblock %}
+{% block content %}
+    <div class="card">
+    <div class="card-body">
+      {% include 'shift/_month_nav.html' %}
+
+      {% if legend %}
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          {% for item in legend %}
+            <span class="cal-badge" style="background: {{ item.color }}">{{ item.name }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="cal">
+        <div class="cal-head">
+          <div class="cal-sun">日</div>
+          <div>月</div>
+          <div>火</div>
+          <div>水</div>
+          <div>木</div>
+          <div>金</div>
+          <div class="cal-sat">土</div>
+        </div>
+        {% for week in weeks %}
+          <div class="cal-week">
+            {% for day in week %}
+              {% if day is None %}
+                <div class="cal-day cal-day-empty"></div>
+              {% else %}
+                <div class="cal-day
+                    {% if day.is_today %}cal-day-today{% elif day.is_past %}cal-day-past{% endif %}
+                    {% if day.is_blocked %}cal-day-blocked{% endif %}
+                    {% if day.is_sunday %}cal-day-sun{% elif day.is_saturday %}cal-day-sat{% endif %}">
+                  <span class="cal-day-num">{{ day.day_num }}</span>
+                  {% if day.schedule %}
+                    <span class="cal-badge" style="background: {{ day.schedule_color }}">
+                      {{ day.schedule.schedule_type.name }}
+                    </span>
+                    {% if day.schedule.note %}
+                      <span class="small text-muted text-truncate" title="{{ day.schedule.note }}">
+                        {{ day.schedule.note }}
+                      </span>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+{% endblock content %}

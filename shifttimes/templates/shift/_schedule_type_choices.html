@@ -1,0 +1,16 @@
+<div class="fw-bold small mb-2">開講区分</div>
+<div class="schedule-choice-group" role="group" aria-label="開講区分">
+  {% for option in schedule_type_options %}
+    <input type="radio" class="btn-check schedule-type-choice" autocomplete="off" name="schedule_type"
+           id="{{ prefix }}_schedule_type_{{ option.id }}" value="{{ option.id }}">
+    <label class="btn btn-outline-secondary" for="{{ prefix }}_schedule_type_{{ option.id }}">
+      <span class="schedule-dot" style="background: {{ option.color }}"></span>{{ option.name }}
+      {% if option.blocks_shift_input %}<span class="small text-muted ms-1">(入力不可)</span>{% endif %}
+    </label>
+  {% endfor %}
+  <input type="radio" class="btn-check schedule-type-choice" autocomplete="off" name="schedule_type"
+         id="{{ prefix }}_schedule_type_blank" value="" checked>
+  <label class="btn btn-outline-secondary" for="{{ prefix }}_schedule_type_blank">
+    {{ blank_label|default:"未設定（曜日の既定）" }}
+  </label>
+</div>

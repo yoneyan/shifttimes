@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+{% block title %}請求管理 | {% endblock %}
+{% block page_title %}請求管理{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }} / {{ group.name }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth_group:admin_home' group.id %}">
+    <i class="bi bi-arrow-left me-1"></i>管理者ページへ戻る
+  </a>
+{% endblock %}
+{% block content %}
+
+{% if subscription and subscription.status == "active" %}
+<!-- 契約中 -->
+<div class="card mb-4 border-success">
+    <div class="card-header bg-success text-white">
+        <i class="bi bi-check-circle me-1"></i>サブスクリプション契約中
+    </div>
+    <div class="card-body">
+        <dl class="row mb-0">
+            <dt class="col-sm-3">プラン</dt>
+            <dd class="col-sm-9">{{ current_plan.name|default:group.stripe_subscription_id }}</dd>
+            <dt class="col-sm-3">ステータス</dt>
+            <dd class="col-sm-9"><span class="badge bg-success">有効</span></dd>
+            <dt class="col-sm-3">次回更新日</dt>
+            <dd class="col-sm-9">{{ subscription.current_period_end|date:"Y年m月d日" }}</dd>
+            <dt class="col-sm-3">サブスクリプションID</dt>
+            <dd class="col-sm-9 text-muted small">{{ group.stripe_subscription_id }}</dd>
+        </dl>
+    </div>
+</div>
+
+<form method="post" action="{% url 'custom_auth_group:billing_cancel' group.id %}"
+      onsubmit="return confirm('サブスクリプションを解約しますか？解約後は期間終了まで利用できます。')">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-outline-danger">
+        <i class="bi bi-x-circle me-1"></i>サブスクリプションを解約する
+    </button>
+</form>
+
+{% else %}
+<!-- 未契約 -->
+<div class="alert alert-info">
+    現在、有効なサブスクリプションはありません。プランを選択して申し込んでください。
+</div>
+<p class="text-muted small mb-4">テンプレート機能・通知機能など、すべての機能をどのプランでもご利用いただけます。</p>
+
+<div class="row g-4">
+
+    <!-- Free -->
+    <div class="col-md-4 col-lg-3">
+        <div class="card h-100 shadow-sm">
+            <div class="card-header text-center py-3">
+                <h5 class="my-0">Free</h5>
+            </div>
+            <div class="card-body d-flex flex-column">
+                <div class="text-center mb-3">
+                    <span class="fs-3 fw-bold">¥0</span>
+                    <span class="text-muted">/ 月</span>
+                </div>
+                <ul class="list-unstyled flex-grow-1 small">
+                    <li class="py-1 border-bottom"><i class="bi bi-people me-1 text-primary"></i>最大 <strong>10名</strong></li>
+                    <li class="py-1"><i class="bi bi-check-circle me-1 text-success"></i>全機能利用可能</li>
+                </ul>
+                <p class="text-muted small mt-2">現在のプラン（無料）</p>
+            </div>
+        </div>
+    </div>
+
+    {% for key, plan in plans.items %}
+    <div class="col-md-4 col-lg-3">
+        <div class="card h-100 shadow-sm {% if plan.recommended %}border-primary{% endif %}">
+            <div class="card-header text-center py-3 {% if plan.recommended %}bg-primary text-white{% endif %} position-relative">
+                <h5 class="my-0">{{ plan.name }}</h5>
+                {% if plan.recommended %}<span class="badge bg-warning text-dark position-absolute top-0 end-0 m-2">人気</span>{% endif %}
+            </div>
+            <div class="card-body d-flex flex-column">
+                <div class="text-center mb-3">
+                    <span class="fs-3 fw-bold">¥{{ plan.amount|floatformat:0 }}</span>
+                    <span class="text-muted">/ 月</span>
+                </div>
+                <ul class="list-unstyled flex-grow-1 small">
+                    <li class="py-1 border-bottom"><i class="bi bi-people me-1 text-primary"></i>最大 <strong>{{ plan.max_members }}名</strong></li>
+                    <li class="py-1"><i class="bi bi-check-circle me-1 text-success"></i>全機能利用可能</li>
+                </ul>
+                <form method="post" action="{% url 'custom_auth_group:billing_checkout' group.id %}" class="mt-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="plan" value="{{ key }}">
+                    <button type="submit"
+                        class="btn {% if plan.recommended %}btn-primary{% else %}btn-outline-primary{% endif %} w-100"
+                        {% if not plan.price_id %}disabled title="準備中"{% endif %}>
+                        このプランで始める
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <!-- Enterprise -->
+    <div class="col-md-4 col-lg-3">
+        <div class="card h-100 shadow-sm">
+            <div class="card-header text-center py-3">
+                <h5 class="my-0">Enterprise</h5>
+            </div>
+            <div class="card-body d-flex flex-column">
+                <div class="text-center mb-3">
+                    <span class="fs-5 fw-bold">別途ご相談</span>
+                </div>
+                <ul class="list-unstyled flex-grow-1 small">
+                    <li class="py-1 border-bottom"><i class="bi bi-people me-1 text-primary"></i><strong>無制限</strong></li>
+                    <li class="py-1 border-bottom"><i class="bi bi-check-circle me-1 text-success"></i>全機能利用可能</li>
+                    <li class="py-1"><i class="bi bi-check-circle me-1 text-success"></i>専任サポート</li>
+                </ul>
+                <a href="mailto:contact@example.com" class="btn btn-outline-secondary mt-3 w-100">お問い合わせ</a>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endif %}
+
+<div class="mt-4">
+    <a href="{% url 'custom_auth_group:index' %}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>グループ一覧に戻る
+    </a>
+</div>
+{% endblock %}

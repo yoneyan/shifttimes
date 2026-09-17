@@ -8,7 +8,7 @@ from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import Group
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.core.mail import send_mail
-from django.db import models
+from django.db import models, transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 from simple_history.models import HistoricalRecords
@@ -22,13 +22,11 @@ class GroupManager(models.Manager):
         return self.filter(is_active=True)
 
     def create_group(
-        self, question, name, name_jp, postcode, address, address_jp, phone, country, contract_type,
-        **extra_fields
+        self, name, name_jp, postcode, address, address_jp, phone,
+        country="Japan", contract_type="E-Mail", **extra_fields
     ):
         extra_fields.setdefault("is_pass", False)
         return self.create(
-            agree=True,
-            question=question,
             name=name,
             name_jp=name_jp,
             postcode=postcode,
@@ -82,17 +80,11 @@ class Group(models.Model):  # noqa: F811
     name_jp = models.CharField("name(japanese)", max_length=150, unique=True)
     comment = models.CharField("comment", max_length=250, default="", blank=True)
     status = models.IntegerField("ステータス", default=1, choices=GROUP_STATUS_CHOICES)
-    allow_service_add = models.BooleanField("サービス追加許可", default=False)
-    allow_jpnic_add = models.BooleanField("JPNIC情報追加許可", default=False)
     membership_type = models.IntegerField("会員種別", default=1, choices=MEMBERSHIP_TYPE_CHOICES)
     membership_expired_at = models.DateTimeField("有効期限", blank=True, null=True)
 
-    # question
-    agree = models.BooleanField("規約確認済み", default=False)
-    is_pass = models.BooleanField("審査OK", default=False)
-
-    # stripe
     stripe_customer_id = models.CharField("Stripe(CusID)", max_length=200, blank=True, null=True)
+    stripe_subscription_id = models.CharField("Stripe(SubID)", max_length=200, blank=True, null=True)
 
     # group personal info
     postcode = models.CharField("郵便番号", max_length=20, default="")
@@ -137,8 +129,10 @@ class UserManager(BaseUserManager):
     def create_user(self, username, username_jp, email, password, **extra_fields):
         extra_fields.setdefault("is_staff", False)
         extra_fields.setdefault("is_active", False)
-        user = self._create_user(username, username_jp, email, password, **extra_fields)
-        user_activate_token = UserActivateToken.objects.create(user=user)
+        with transaction.atomic():
+            user = self._create_user(username, username_jp, email, password, **extra_fields)
+            user_activate_token = UserActivateToken.objects.create(user=user)
+
         subject = "Please Activate Your Account"
         message = (
             f"URLにアクセスしてアカウントを有効化してください。\n "

@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}シフト希望の確定 | {% endblock %}
+{% block page_title %}シフト希望の確定{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }} / {{ group.name }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'shift:index' %}?group={{ group.id }}">
+    <i class="bi bi-arrow-left me-1"></i>戻る
+  </a>
+{% endblock %}
+{% block content %}
+
+<div class="alert alert-warning d-flex align-items-start gap-2 mb-4" role="alert">
+  <i class="bi bi-exclamation-triangle-fill fs-5 mt-1 flex-shrink-0"></i>
+  <div>
+    <strong>下書き中のシフト希望が {{ draft_count }} 件あります。</strong><br>
+    内容を確認のうえ、「確定する」ボタンを押してください。確定後は管理者が閲覧できるようになります。
+  </div>
+</div>
+
+<div class="table-responsive mb-4">
+  <table class="table table-bordered table-sm align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>日付</th>
+        <th>開講区分</th>
+        <th>シフト希望</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in summary_rows %}
+        <tr>
+          <td class="text-nowrap fw-bold">{{ row.work_date|date:"Y/m/d (D)" }}</td>
+          <td class="text-nowrap">
+            {% if row.opening_schedule %}
+              <span class="badge {% if row.opening_schedule.schedule_type.blocks_shift_input %}text-bg-danger{% else %}text-bg-info{% endif %}">
+                {{ row.opening_schedule.schedule_type.name }}
+              </span>
+            {% else %}
+              <span class="text-muted small">-</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="d-flex flex-wrap gap-1">
+              {% for entry in row.entries %}
+                {% if entry.status == 'available' %}
+                  <span class="badge text-bg-success">{{ entry.time_slot.name }} ○</span>
+                {% elif entry.status == 'maybe' %}
+                  <span class="badge text-bg-warning">{{ entry.time_slot.name }} △</span>
+                {% else %}
+                  <span class="badge text-bg-secondary">{{ entry.time_slot.name }} ×</span>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+  <input type="hidden" name="date_to"   value="{{ date_to|date:'Y-m-d' }}">
+  <div class="d-flex flex-wrap gap-2">
+    <button type="submit" class="btn btn-success">
+      <i class="bi bi-check-lg me-1"></i>{{ draft_count }} 件を確定する
+    </button>
+    <a href="{% url 'shift:index' %}?group={{ group.id }}" class="btn btn-outline-secondary">キャンセル</a>
+  </div>
+</form>
+{% endblock content %}

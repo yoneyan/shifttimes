@@ -10,10 +10,11 @@ django-debug-toolbar = "*"
 django-mathfilters = "*"
 django-widget-tweaks = "*"
 django-qrcode = "*"
-simple-history = "*"
+#simple-history = "*"
 pyotp = "*"
 qrcode = "*"
 slack-sdk = "*"
+stripe = "*"
 
 [dev-packages]
 

@@ -3,6 +3,7 @@ from io import BytesIO
 
 import pyotp
 import qrcode
+import qrcode.image.svg
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import PasswordResetCompleteView, PasswordResetConfirmView, \
     PasswordResetView, PasswordResetDoneView
@@ -15,9 +16,10 @@ from custom_auth.form import (
     GroupForm,
     MyPasswordChangeForm,
     ProfileEditForm,
+    SignUpForm,
     TwoAuthForm, ForgetForm, NewSetPasswordForm,
 )
-from custom_auth.models import UserGroup
+from custom_auth.models import UserGroup, User
 from custom_auth.models import TOTPDevice, UserActivateToken
 
 
@@ -72,9 +74,10 @@ def add_two_auth(request):
     initial_check = TOTPDevice.objects.check_max_totp_device(user=request.user)
     secret = TOTPDevice.objects.generate_secret()
     form = TwoAuthForm()
+    # PNG 生成は Pillow が必要なため、追加依存のない SVG で描画する
     buffer = BytesIO()
-    qrcode.make(secret.get("url")).save(buffer)
-    qr = base64.b64encode(buffer.getvalue()).decode().replace("'", "")
+    qrcode.make(secret.get("url"), image_factory=qrcode.image.svg.SvgPathImage).save(buffer)
+    qr = base64.b64encode(buffer.getvalue()).decode()
     if request.method == "POST":
         id = request.POST.get("id", 0)
         if id == "submit" and initial_check:
@@ -213,6 +216,58 @@ def group_permission(request, group_id: int):
         "error": error,
     }
     return render(request, "group/edit_permission.html", context)
+
+
+@login_required
+def group_admin_home(request, group_id: int):
+    user_group = request.user.usergroup_set.filter(group_id=group_id, user=request.user).first()
+    if not user_group or not user_group.is_admin:
+        return render(request, "error.html", {"text": "このグループの管理者権限がありません"})
+
+    context = {
+        "group": user_group.group,
+        "member_count": user_group.group.usergroup_set.count(),
+    }
+    return render(request, "group/admin.html", context)
+
+
+def _register_user_to_group(request, group_id: int, is_admin_role: bool):
+    user_group = request.user.usergroup_set.filter(group_id=group_id, user=request.user).first()
+    if not user_group or not user_group.is_admin:
+        return render(request, "error.html", {"text": "このグループの管理者権限がありません"})
+
+    error = None
+    form = SignUpForm(data=request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        duplicated = (
+            User.objects.filter(username=form.cleaned_data["username"]).exists()
+            or User.objects.filter(username_jp=form.cleaned_data["username_jp"]).exists()
+            or User.objects.filter(email=form.cleaned_data["email"]).exists()
+        )
+        if duplicated:
+            error = "同じユーザ名またはメールアドレスがすでに登録されています"
+        else:
+            new_user = form.create_user()
+            UserGroup.objects.create(user=new_user, group=user_group.group, is_admin=is_admin_role)
+            return render(request, "done.html", {"text": "ユーザを登録しました。本人確認用のメールを送信しました。"})
+
+    context = {
+        "form": form,
+        "error": error,
+        "group": user_group.group,
+        "is_admin_register": is_admin_role,
+    }
+    return render(request, "group/register.html", context)
+
+
+@login_required
+def register_member(request, group_id: int):
+    return _register_user_to_group(request, group_id, is_admin_role=False)
+
+
+@login_required
+def register_admin(request, group_id: int):
+    return _register_user_to_group(request, group_id, is_admin_role=True)
 
 
 class PasswordReset(PasswordResetView):

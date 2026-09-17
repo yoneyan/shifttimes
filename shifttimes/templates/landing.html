@@ -1,0 +1,185 @@
+{% extends 'base.html' %}
+
+{% block page_header %}{% endblock %}
+{% block content %}
+<!-- Hero Section -->
+<div class="py-5 text-center">
+    <h1 class="display-5 fw-bold">シフト管理をもっとスマートに</h1>
+    <p class="lead mt-3 text-muted">
+        シフトの作成・共有・通知を一元管理。<br>
+        飲食店・小売・医療など、あらゆる職場のシフト管理を効率化します。
+    </p>
+    <div class="mt-4 d-flex justify-content-center gap-3">
+        <a href="{% url 'login' %}" class="btn btn-primary btn-lg px-4">ログイン</a>
+        <a href="{% url 'custom_auth_group:add' %}" class="btn btn-outline-secondary btn-lg px-4">無料で始める</a>
+    </div>
+</div>
+
+<hr class="my-5">
+
+<!-- Features Section -->
+<div class="row g-4 py-3">
+    <h2 class="text-center mb-4">主な機能</h2>
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm">
+            <div class="card-body text-center">
+                <i class="bi bi-calendar3 display-6 text-primary"></i>
+                <h5 class="card-title mt-3">シフト管理</h5>
+                <p class="card-text text-muted">カレンダー形式でシフトを直感的に作成・編集。スタッフごとのシフトテンプレートにも対応。</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm">
+            <div class="card-body text-center">
+                <i class="bi bi-bell display-6 text-primary"></i>
+                <h5 class="card-title mt-3">通知機能</h5>
+                <p class="card-text text-muted">シフト変更やお知らせをメンバーへ自動通知。重要な情報を見逃しません。</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm">
+            <div class="card-body text-center">
+                <i class="bi bi-people display-6 text-primary"></i>
+                <h5 class="card-title mt-3">グループ管理</h5>
+                <p class="card-text text-muted">店舗・チームごとにグループを作成し、メンバーの権限を柔軟に管理できます。</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<hr class="my-5">
+
+<!-- Pricing Section -->
+<div class="py-3" id="pricing">
+    <h2 class="text-center mb-2">料金プラン</h2>
+    <p class="text-center text-muted mb-4">テンプレート機能・通知機能など、すべての機能をどのプランでもご利用いただけます。</p>
+
+    <div class="row row-cols-1 row-cols-md-3 g-4 justify-content-center">
+
+        <!-- Free -->
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header text-center py-3">
+                    <h4 class="my-0 fw-normal">Free</h4>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <div class="text-center mb-3">
+                        <span class="display-6 fw-bold">¥0</span>
+                        <span class="text-muted">/ 月</span>
+                    </div>
+                    <ul class="list-unstyled flex-grow-1">
+                        <li class="py-1 border-bottom"><i class="bi bi-people me-2 text-primary"></i>メンバー最大 <strong>10名</strong></li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>シフト管理</li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>テンプレート機能</li>
+                        <li class="py-1"><i class="bi bi-check-circle me-2 text-success"></i>通知機能</li>
+                    </ul>
+                    <a href="{% url 'custom_auth_group:add' %}" class="btn btn-outline-primary mt-3 w-100">無料で始める</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Standard -->
+        <div class="col">
+            <div class="card h-100 shadow-sm border-primary">
+                <div class="card-header text-center py-3 bg-primary text-white position-relative">
+                    <h4 class="my-0 fw-normal">Standard</h4>
+                    <span class="badge bg-warning text-dark position-absolute top-0 end-0 m-2">人気</span>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <div class="text-center mb-3">
+                        <span class="display-6 fw-bold">¥1,980</span>
+                        <span class="text-muted">/ 月</span>
+                    </div>
+                    <ul class="list-unstyled flex-grow-1">
+                        <li class="py-1 border-bottom"><i class="bi bi-people me-2 text-primary"></i>メンバー最大 <strong>30名</strong></li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>シフト管理</li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>テンプレート機能</li>
+                        <li class="py-1"><i class="bi bi-check-circle me-2 text-success"></i>通知機能</li>
+                    </ul>
+                    <a href="{% url 'custom_auth_group:add' %}" class="btn btn-primary mt-3 w-100">今すぐ始める</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pro 1 -->
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header text-center py-3">
+                    <h4 class="my-0 fw-normal">Pro 1</h4>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <div class="text-center mb-3">
+                        <span class="display-6 fw-bold">¥4,980</span>
+                        <span class="text-muted">/ 月</span>
+                    </div>
+                    <ul class="list-unstyled flex-grow-1">
+                        <li class="py-1 border-bottom"><i class="bi bi-people me-2 text-primary"></i>メンバー最大 <strong>100名</strong></li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>シフト管理</li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>テンプレート機能</li>
+                        <li class="py-1"><i class="bi bi-check-circle me-2 text-success"></i>通知機能</li>
+                    </ul>
+                    <a href="{% url 'custom_auth_group:add' %}" class="btn btn-outline-primary mt-3 w-100">今すぐ始める</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pro 2 -->
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header text-center py-3">
+                    <h4 class="my-0 fw-normal">Pro 2</h4>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <div class="text-center mb-3">
+                        <span class="display-6 fw-bold">¥9,980</span>
+                        <span class="text-muted">/ 月</span>
+                    </div>
+                    <ul class="list-unstyled flex-grow-1">
+                        <li class="py-1 border-bottom"><i class="bi bi-people me-2 text-primary"></i>メンバー最大 <strong>250名</strong></li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>シフト管理</li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>テンプレート機能</li>
+                        <li class="py-1"><i class="bi bi-check-circle me-2 text-success"></i>通知機能</li>
+                    </ul>
+                    <a href="{% url 'custom_auth_group:add' %}" class="btn btn-outline-primary mt-3 w-100">今すぐ始める</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Enterprise -->
+        <div class="col">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header text-center py-3">
+                    <h4 class="my-0 fw-normal">Enterprise</h4>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    <div class="text-center mb-3">
+                        <span class="fs-4 fw-bold">別途ご相談</span>
+                    </div>
+                    <ul class="list-unstyled flex-grow-1">
+                        <li class="py-1 border-bottom"><i class="bi bi-people me-2 text-primary"></i>メンバー<strong>無制限</strong></li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>シフト管理</li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>テンプレート機能</li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>通知機能</li>
+                        <li class="py-1"><i class="bi bi-check-circle me-2 text-success"></i>専任サポート・カスタマイズ</li>
+                    </ul>
+                    <a href="mailto:contact@example.com" class="btn btn-outline-secondary mt-3 w-100">お問い合わせ</a>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<hr class="my-5">
+
+<!-- Contact Section -->
+<div class="py-3 text-center mb-5">
+    <h2 class="mb-3">お問い合わせ</h2>
+    <p class="text-muted">ご不明な点やご要望がございましたら、お気軽にご連絡ください。</p>
+    <a href="mailto:contact@example.com" class="btn btn-outline-primary btn-lg">
+        <i class="bi bi-envelope me-2"></i>メールで問い合わせる
+    </a>
+</div>
+{% endblock content %}

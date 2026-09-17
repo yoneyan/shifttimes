@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block title %}シフト希望カレンダー | {% endblock %}
+{% block page_title %}シフト希望カレンダー{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-primary btn-sm text-nowrap" href="{{ entry_table_url }}">
+    <i class="bi bi-grid-3x3-gap me-1"></i>希望を登録
+  </a>
+  <a class="btn btn-outline-secondary btn-sm text-nowrap" href="{% url 'shift:schedule_member' group.id %}">
+    <i class="bi bi-calendar-week me-1"></i>開講スケジュール
+  </a>
+  <a class="btn btn-outline-secondary btn-sm text-nowrap" href="{% url 'shift:index' %}">
+    <i class="bi bi-arrow-left me-1"></i>一覧へ戻る
+  </a>
+{% endblock %}
+{% block content %}
+    {% if draft_count %}
+    <div class="alert alert-warning py-2 small d-flex align-items-center gap-2" role="alert">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <div>この月に未確定の希望が {{ draft_count }} 件あります（薄く表示）。</div>
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-body">
+      {% include 'shift/_month_nav.html' %}
+
+      {# 集計サマリー #}
+      <div class="row g-2 mb-3">
+        {% for item in summary %}
+          <div class="col-4">
+            <div class="border rounded text-center py-2 h-100">
+              <div class="fw-bold" style="color: {{ item.color }}">
+                <span class="fs-5">{{ item.symbol }}</span>
+                <span class="small">{{ item.label }}</span>
+              </div>
+              <div class="fs-5 fw-bold">{{ item.count }}<span class="small fw-normal text-muted ms-1">枠</span></div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      {# 月グリッド #}
+      <div class="cal mb-2">
+        <div class="cal-head">
+          <div class="cal-sun">日</div>
+          <div>月</div>
+          <div>火</div>
+          <div>水</div>
+          <div>木</div>
+          <div>金</div>
+          <div class="cal-sat">土</div>
+        </div>
+        {% for week in weeks %}
+          <div class="cal-week">
+            {% for day in week %}
+              {% if day is None %}
+                <div class="cal-day cal-day-empty"></div>
+              {% else %}
+                <a class="cal-day
+                    {% if day.is_today %}cal-day-today{% elif day.is_past %}cal-day-past{% endif %}
+                    {% if day.is_blocked %}cal-day-blocked{% endif %}
+                    {% if day.is_sunday %}cal-day-sun{% elif day.is_saturday %}cal-day-sat{% endif %}"
+                   href="{{ day.entry_url }}" title="{{ day.date|date:'n月j日' }} の希望を登録">
+                  <span class="cal-day-num">{{ day.day_num }}</span>
+                  {% if day.schedule %}
+                    <span class="cal-badge" style="background: {{ day.schedule_color }}"
+                          title="{{ day.schedule.schedule_type.name }}{% if day.schedule.note %} / {{ day.schedule.note }}{% endif %}">
+                      {{ day.schedule.schedule_type.name }}
+                    </span>
+                  {% endif %}
+                  {% if day.chips %}
+                    <span class="cal-chips">
+                      {% for chip in day.chips %}
+                        <span class="cal-chip {% if chip.is_draft %}cal-chip-draft{% endif %}"
+                              style="background: {{ chip.color }}" title="{{ chip.title }}">
+                          <span class="cal-chip-symbol">{{ chip.symbol }}</span><span
+                            class="cal-chip-label ms-1">{{ chip.label }}</span>
+                        </span>
+                      {% endfor %}
+                    </span>
+                  {% endif %}
+                </a>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="d-flex flex-wrap align-items-center gap-3 small text-muted">
+        <span>日付をタップするとその日の登録画面が開きます</span>
+        {% if not has_entries %}
+          <span class="text-warning-emphasis">この月の希望はまだ登録されていません</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock content %}

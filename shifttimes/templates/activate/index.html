@@ -1,9 +1,13 @@
 {% extends 'base.html' %}
-{% load widget_tweaks %}
-{% load static %}
+{% block title %}アカウント有効化 | {% endblock %}
+{% block page_title %}アカウント有効化{% endblock %}
 {% block content %}
-  <h2>{{ message }}</h2>
+  <div class="card form-narrow">
+    <div class="card-body">
+      <p class="mb-3">{{ message }}</p>
+      <a class="btn btn-primary" href="{% url 'login' %}">
+        <i class="bi bi-box-arrow-in-right me-1"></i>ログインへ
+      </a>
+    </div>
+  </div>
 {% endblock content %}
-
-{% block javascript %}
-{% endblock javascript %}

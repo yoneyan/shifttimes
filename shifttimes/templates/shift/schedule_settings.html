@@ -1,0 +1,537 @@
+{% extends 'base.html' %}
+{% block extrahead %}
+  <style>
+    .schedule-table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .schedule-table th,
+    .schedule-table td {
+      border: 1px solid #adb5bd;
+      padding: .45rem .5rem;
+    }
+
+    .schedule-table thead th {
+      background: #f1f3f5;
+      font-size: .8rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .schedule-table tbody tr.schedule-row,
+    .schedule-table tbody tr.schedule-type-row,
+    .schedule-table tbody tr.deadline-row {
+      cursor: pointer;
+    }
+
+    .schedule-table tbody tr.schedule-row:hover td,
+    .schedule-table tbody tr.schedule-type-row:hover td,
+    .schedule-table tbody tr.deadline-row:hover td {
+      background: #e7f1ff;
+    }
+
+    .schedule-row-today .schedule-date-cell {
+      background: #fff8e1;
+    }
+
+    .schedule-date-cell {
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .schedule-date-cell .schedule-date-sat { color: #1565c0; }
+    .schedule-date-cell .schedule-date-sun { color: #c62828; }
+
+    .schedule-badge {
+      border-radius: .25rem;
+      color: #fff;
+      display: inline-block;
+      font-size: .78rem;
+      font-weight: 700;
+      padding: .1rem .45rem;
+    }
+
+    .schedule-choice-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .4rem;
+    }
+
+    .schedule-choice-group .btn {
+      align-items: center;
+      display: inline-flex;
+      justify-content: center;
+    }
+
+    .schedule-dot {
+      border-radius: .15rem;
+      display: inline-block;
+      height: .8rem;
+      margin-right: .35rem;
+      width: .8rem;
+    }
+
+    @media (max-width: 575.98px) {
+      .schedule-table th,
+      .schedule-table td { font-size: .82rem; padding: .4rem .3rem; }
+
+      .schedule-choice-group .btn { flex: 1 1 100%; justify-content: flex-start; }
+    }
+  </style>
+{% endblock extrahead %}
+
+{% block title %}開講スケジュール設定 | {% endblock %}
+{% block page_title %}開講スケジュール設定{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }} / {{ group.name }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{{ calendar_url }}">
+    <i class="bi bi-calendar3 me-1"></i>カレンダーへ戻る
+  </a>
+{% endblock %}
+{% block content %}
+
+  <section class="mb-5">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+      <h2 class="h5 mb-0">シフト提出期限</h2>
+      <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal"
+              data-bs-target="#deadlineModal" data-mode="add">
+        <i class="bi bi-plus-lg me-1"></i>追加
+      </button>
+    </div>
+    <p class="text-muted small mb-2">
+      対象期間（例：来月分）と提出期限日を登録します。行をタップすると編集できます。
+    </p>
+
+    <div class="table-responsive mb-4">
+      <table class="schedule-table">
+        <thead>
+        <tr>
+          <th scope="col">対象期間</th>
+          <th scope="col">提出期限日</th>
+          <th scope="col">メモ</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for deadline in deadlines %}
+          <tr class="deadline-row"
+              data-id="{{ deadline.id }}"
+              data-period-start="{{ deadline.period_start|date:'Y-m-d' }}"
+              data-period-end="{{ deadline.period_end|date:'Y-m-d' }}"
+              data-deadline-date="{{ deadline.deadline_date|date:'Y-m-d' }}"
+              data-note="{{ deadline.note }}"
+              data-delete-url="{% url 'shift:deadline_delete' group.id deadline.id %}">
+            <td class="text-nowrap">
+              {{ deadline.period_start|date:'Y/m/d' }}〜{{ deadline.period_end|date:'Y/m/d' }}
+              {% if deadline == open_period %}<span class="badge text-bg-success ms-1">入力受付中</span>{% endif %}
+            </td>
+            <td class="text-nowrap">{{ deadline.deadline_date|date:'Y/m/d' }}</td>
+            <td class="text-break small text-muted">{{ deadline.note|default:'' }}</td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="3" class="text-center text-muted py-3">提出期限はまだありません。</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="mb-5">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+      <h2 class="h5 mb-0">開講区分</h2>
+      <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal"
+              data-bs-target="#scheduleTypeModal" data-mode="add">
+        <i class="bi bi-plus-lg me-1"></i>追加
+      </button>
+    </div>
+    <p class="text-muted small mb-2">行をタップすると区分名やシフト入力の可否を変更できます。</p>
+
+    <div class="table-responsive mb-4">
+      <table class="schedule-table">
+        <thead>
+        <tr>
+          <th scope="col">区分名</th>
+          <th scope="col">シフト入力</th>
+          <th scope="col">状態</th>
+          <th scope="col">表示順</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for row in schedule_type_rows %}
+          <tr class="schedule-type-row"
+              data-id="{{ row.schedule_type.id }}"
+              data-name="{{ row.schedule_type.name }}"
+              data-blocks="{% if row.schedule_type.blocks_shift_input %}1{% endif %}"
+              data-active="{% if row.schedule_type.is_active %}1{% endif %}"
+              data-order="{{ row.schedule_type.display_order }}">
+            <td>
+              <span class="schedule-dot" style="background: {{ row.color }}"></span>{{ row.schedule_type.name }}
+            </td>
+            <td>
+              {% if row.schedule_type.blocks_shift_input %}
+                <span class="badge text-bg-danger">不可</span>
+              {% else %}
+                <span class="badge text-bg-success">可</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if row.schedule_type.is_active %}
+                <span class="badge text-bg-primary">有効</span>
+              {% else %}
+                <span class="badge text-bg-secondary">無効</span>
+              {% endif %}
+            </td>
+            <td>{{ row.schedule_type.display_order }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ===== 提出期限ダイアログ ===== #}
+  <div class="modal fade" id="deadlineModal" tabindex="-1" aria-labelledby="deadlineModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="deadline">
+          <input type="hidden" name="deadline_id" id="deadlineId" value="">
+          <div class="modal-header">
+            <h5 class="modal-title" id="deadlineModalLabel">シフト提出期限</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label small fw-bold" for="deadlinePeriodStart">対象期間 開始日</label>
+              <input type="date" class="form-control" id="deadlinePeriodStart" name="period_start"
+                     value="{{ default_deadline_start|date:'Y-m-d' }}" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold" for="deadlinePeriodEnd">対象期間 終了日</label>
+              <input type="date" class="form-control" id="deadlinePeriodEnd" name="period_end"
+                     value="{{ default_deadline_end|date:'Y-m-d' }}" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold" for="deadlineDate">提出期限日</label>
+              <input type="date" class="form-control" id="deadlineDate" name="deadline_date"
+                     value="{{ default_deadline_date|date:'Y-m-d' }}" required>
+            </div>
+            <div>
+              <label class="form-label small fw-bold" for="deadlineNote">メモ（任意）</label>
+              <input type="text" class="form-control" id="deadlineNote" name="note" maxlength="200">
+            </div>
+          </div>
+          <div class="modal-footer justify-content-between">
+            <button type="submit" class="btn btn-outline-danger" id="deadlineDelete" formnovalidate
+                    onclick="return confirm('この提出期限を削除しますか？');">
+              <i class="bi bi-trash me-1"></i>削除
+            </button>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg me-1"></i>登録
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# ===== 開講区分ダイアログ ===== #}
+  <div class="modal fade" id="scheduleTypeModal" tabindex="-1" aria-labelledby="scheduleTypeModalLabel"
+       aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="schedule_type">
+          <input type="hidden" name="schedule_type_id" id="scheduleTypeId" value="">
+          <div class="modal-header">
+            <h5 class="modal-title" id="scheduleTypeModalLabel">開講区分</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label small fw-bold" for="scheduleTypeName">区分名</label>
+              <input type="text" class="form-control" id="scheduleTypeName" name="name" maxlength="100"
+                     placeholder="例: 休校、自習室" required>
+            </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="scheduleTypeBlocks" name="blocks_shift_input">
+              <label class="form-check-label" for="scheduleTypeBlocks">この区分の日はシフト入力できないようにする</label>
+            </div>
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" id="scheduleTypeActive" name="is_active" checked>
+              <label class="form-check-label" for="scheduleTypeActive">有効にする</label>
+            </div>
+            <div>
+              <label class="form-label small fw-bold" for="scheduleTypeOrder">表示順</label>
+              <input type="number" class="form-control" id="scheduleTypeOrder" name="display_order" min="0"
+                     value="100" required>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>登録
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <section class="mb-5">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+      <h2 class="h5 mb-0">日付別スケジュール</h2>
+      <div class="d-flex align-items-center gap-2">
+        <a class="btn btn-outline-secondary btn-sm" href="?month={{ prev_month|date:'Y-m' }}" aria-label="前の月">
+          <i class="bi bi-chevron-left"></i>
+        </a>
+        <span class="fw-bold">{{ current_month|date:'Y年n月' }}</span>
+        <a class="btn btn-outline-secondary btn-sm" href="?month={{ next_month|date:'Y-m' }}" aria-label="次の月">
+          <i class="bi bi-chevron-right"></i>
+        </a>
+      </div>
+    </div>
+
+    <p class="small mb-2">日付の行をタップするとその日の開講区分を設定できます。同じ曜日をまとめて設定する場合は「曜日一括設定」を使います。</p>
+
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal"
+              data-bs-target="#scheduleWeekdayModal" {% if not weekday_options %}disabled{% endif %}>
+        <i class="bi bi-calendar-week me-1"></i>曜日一括設定
+      </button>
+    </div>
+
+    <div class="table-responsive mb-4">
+      <table class="schedule-table">
+        <thead>
+        <tr>
+          <th scope="col">日付</th>
+          <th scope="col">開講区分</th>
+          <th scope="col">メモ</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for row in schedule_rows %}
+          <tr class="schedule-row{% if row.is_today %} schedule-row-today{% endif %}"
+              data-date="{{ row.work_date|date:'Y-m-d' }}"
+              data-label="{{ row.work_date|date:'n月j日 (D)' }}"
+              data-schedule-type="{{ row.schedule_type_id }}"
+              data-note="{{ row.note }}">
+            <td class="schedule-date-cell">
+              <span
+                  class="{% if row.work_date|date:'w' == '0' %}schedule-date-sun{% elif row.work_date|date:'w' == '6' %}schedule-date-sat{% endif %}">
+                {{ row.work_date|date:'j' }}日({{ row.work_date|date:'D' }})
+              </span>
+            </td>
+            <td class="schedule-type-cell">
+              {% if row.date_schedule %}
+                <span class="schedule-badge" style="background: {{ row.color }}">
+                  {{ row.date_schedule.schedule_type.name }}
+                </span>
+              {% else %}
+                <span class="text-muted">未設定</span>
+              {% endif %}
+            </td>
+            <td class="schedule-note-cell small text-muted">
+              {{ row.note }}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ===== 日付ごとの開講区分ダイアログ ===== #}
+  <div class="modal fade" id="scheduleDateModal" tabindex="-1" aria-labelledby="scheduleDateModalLabel"
+       aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="schedule_date">
+          <input type="hidden" name="month" value="{{ current_month_value }}">
+          <input type="hidden" name="work_date" id="scheduleDateWorkDate" value="">
+          <div class="modal-header">
+            <h5 class="modal-title" id="scheduleDateModalLabel">開講区分</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+          </div>
+          <div class="modal-body">
+            {% include 'shift/_schedule_type_choices.html' with prefix='date' %}
+            <div class="mt-3">
+              <label class="form-label small fw-bold" for="scheduleDateNote">メモ（任意）</label>
+              <input type="text" class="form-control" id="scheduleDateNote" name="note" maxlength="200"
+                     placeholder="例: 祝日のため休校">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>登録
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# ===== 曜日一括設定ダイアログ ===== #}
+  <div class="modal fade" id="scheduleWeekdayModal" tabindex="-1" aria-labelledby="scheduleWeekdayModalLabel"
+       aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="schedule_weekday">
+          <input type="hidden" name="month" value="{{ current_month_value }}">
+          <div class="modal-header">
+            <h5 class="modal-title" id="scheduleWeekdayModalLabel">{{ current_month|date:'Y年n月' }} 曜日一括設定</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label small fw-bold" for="scheduleWeekdaySelect">曜日</label>
+              <select class="form-select" id="scheduleWeekdaySelect" name="weekday">
+                {% for option in weekday_options %}
+                  <option value="{{ option.value }}" data-days="{{ option.days_label }}">
+                    {{ option.label }}（{{ option.count }}日）
+                  </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">日付：<span id="scheduleWeekdayDays"></span></div>
+            </div>
+            {% include 'shift/_schedule_type_choices.html' with prefix='weekday' %}
+            <div class="mt-3">
+              <label class="form-label small fw-bold" for="scheduleWeekdayNote">メモ（任意）</label>
+              <input type="text" class="form-control" id="scheduleWeekdayNote" name="note" maxlength="200">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>まとめて設定
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+{% endblock content %}
+
+{% block javascript %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const dateModalEl = document.getElementById("scheduleDateModal");
+      const dateModal = new bootstrap.Modal(dateModalEl);
+      const workDateInput = document.getElementById("scheduleDateWorkDate");
+      const noteInput = document.getElementById("scheduleDateNote");
+      const modalLabel = document.getElementById("scheduleDateModalLabel");
+
+      document.querySelectorAll("tr.schedule-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+          workDateInput.value = row.dataset.date;
+          modalLabel.textContent = row.dataset.label + " の開講区分";
+          noteInput.value = row.dataset.note || "";
+          const wanted = row.dataset.scheduleType || "";
+          dateModalEl.querySelectorAll(".schedule-type-choice").forEach(function (radio) {
+            radio.checked = radio.value === wanted;
+          });
+          dateModal.show();
+        });
+      });
+
+      const weekdaySelect = document.getElementById("scheduleWeekdaySelect");
+      const weekdayDays = document.getElementById("scheduleWeekdayDays");
+      if (weekdaySelect) {
+        const showDays = function () {
+          const option = weekdaySelect.options[weekdaySelect.selectedIndex];
+          weekdayDays.textContent = option ? option.dataset.days : "";
+        };
+        weekdaySelect.addEventListener("change", showDays);
+        showDays();
+      }
+
+      // 開講区分
+      const typeModalEl = document.getElementById("scheduleTypeModal");
+      const typeModal = new bootstrap.Modal(typeModalEl);
+      const fillTypeModal = function (data) {
+        document.getElementById("scheduleTypeId").value = data.id || "";
+        document.getElementById("scheduleTypeName").value = data.name || "";
+        document.getElementById("scheduleTypeBlocks").checked = Boolean(data.blocks);
+        document.getElementById("scheduleTypeActive").checked = data.id ? Boolean(data.active) : true;
+        document.getElementById("scheduleTypeOrder").value = data.order || 100;
+        document.getElementById("scheduleTypeModalLabel").textContent = data.id ? "開講区分の編集" : "開講区分の追加";
+      };
+      document.querySelectorAll("tr.schedule-type-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+          fillTypeModal({
+            id: row.dataset.id,
+            name: row.dataset.name,
+            blocks: row.dataset.blocks,
+            active: row.dataset.active,
+            order: row.dataset.order,
+          });
+          typeModal.show();
+        });
+      });
+      typeModalEl.addEventListener("show.bs.modal", function (event) {
+        if (event.relatedTarget && event.relatedTarget.dataset.mode === "add") {
+          fillTypeModal({});
+        }
+      });
+
+      // シフト提出期限
+      const deadlineModalEl = document.getElementById("deadlineModal");
+      const deadlineModal = new bootstrap.Modal(deadlineModalEl);
+      const deadlineDeleteBtn = document.getElementById("deadlineDelete");
+      const defaults = {
+        start: "{{ default_deadline_start|date:'Y-m-d' }}",
+        end: "{{ default_deadline_end|date:'Y-m-d' }}",
+        date: "{{ default_deadline_date|date:'Y-m-d' }}",
+      };
+      const fillDeadlineModal = function (data) {
+        document.getElementById("deadlineId").value = data.id || "";
+        document.getElementById("deadlinePeriodStart").value = data.start || defaults.start;
+        document.getElementById("deadlinePeriodEnd").value = data.end || defaults.end;
+        document.getElementById("deadlineDate").value = data.date || defaults.date;
+        document.getElementById("deadlineNote").value = data.note || "";
+        document.getElementById("deadlineModalLabel").textContent = data.id ? "提出期限の編集" : "提出期限の追加";
+        if (data.deleteUrl) {
+          deadlineDeleteBtn.setAttribute("formaction", data.deleteUrl);
+          deadlineDeleteBtn.classList.remove("d-none");
+        } else {
+          deadlineDeleteBtn.removeAttribute("formaction");
+          deadlineDeleteBtn.classList.add("d-none");
+        }
+      };
+      document.querySelectorAll("tr.deadline-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+          fillDeadlineModal({
+            id: row.dataset.id,
+            start: row.dataset.periodStart,
+            end: row.dataset.periodEnd,
+            date: row.dataset.deadlineDate,
+            note: row.dataset.note,
+            deleteUrl: row.dataset.deleteUrl,
+          });
+          deadlineModal.show();
+        });
+      });
+      deadlineModalEl.addEventListener("show.bs.modal", function (event) {
+        if (event.relatedTarget && event.relatedTarget.dataset.mode === "add") {
+          fillDeadlineModal({});
+        }
+      });
+    });
+  </script>
+{% endblock javascript %}

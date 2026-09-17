@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}シフト管理 | {% endblock %}
+{% block page_title %}シフト管理{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">所属グループごとに勤務できる時間帯を登録できます。</p>
+{% endblock %}
+{% block content %}
+
+  {% if total_draft_count %}
+    <div class="alert alert-warning d-flex align-items-center gap-2 mb-4" role="alert">
+      <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0"></i>
+      <div>
+        <strong>未確定のシフト希望が {{ total_draft_count }} 件あります。</strong>
+        登録画面の「適用（確定）」を押してください。
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="row g-3">
+    {% for card in group_cards %}
+      <div class="col-12 col-md-6 col-xl-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <div class="d-flex align-items-start justify-content-between gap-2">
+              <div>
+                <h2 class="h6 mb-1">{{ card.group.name_jp }}</h2>
+                <p class="small text-muted mb-0">{{ card.group.name }}</p>
+              </div>
+              {% if card.is_admin %}<span class="badge text-bg-dark">管理者</span>{% endif %}
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mt-2">
+              {% if card.draft_count %}
+                <span class="badge text-bg-warning">未確定 {{ card.draft_count }} 件</span>
+              {% endif %}
+              {% if card.deadline %}
+                <span class="badge {% if card.deadline.deadline_date < today %}text-bg-danger{% elif card.deadline.deadline_date == today %}text-bg-warning{% else %}text-bg-secondary{% endif %}">
+                  <i class="bi bi-clock me-1"></i>提出期限 {{ card.deadline.deadline_date|date:"n/j" }}
+                  {% if card.deadline.deadline_date == today %}（本日）{% endif %}
+                </span>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="card-footer bg-white">
+            <div class="d-grid gap-2 d-sm-flex flex-sm-wrap">
+              <a class="btn btn-primary btn-sm" href="{% url 'shift:entry_table' card.group.id %}">
+                <i class="bi bi-grid-3x3-gap me-1"></i>シフト希望を登録
+              </a>
+              <a class="btn btn-outline-primary btn-sm" href="{% url 'shift:shift_calendar' card.group.id %}">
+                <i class="bi bi-calendar3 me-1"></i>カレンダーで見る
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% empty %}
+      <div class="col-12">
+        <div class="alert alert-info" role="alert">
+          所属中のグループがありません。管理者にグループへの追加を依頼してください。
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock content %}

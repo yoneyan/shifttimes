@@ -47,9 +47,12 @@ INSTALLED_APPS = [
     'shifttimes',
     'custom_auth',
     'notice',
-    'debug_toolbar',
+    'shift',
     'simple_history'
 ]
+
+if DEBUG:
+    INSTALLED_APPS.append("debug_toolbar")
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -75,6 +78,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'shift.context_processors.shift_admin_groups',
             ],
         },
     },
@@ -145,3 +149,56 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "custom_auth.User"
 
 ADMIN_DOMAIN_URL = os.environ.get("ADMIN_DOMAIN_URL", "test.local")
+
+# Stripe
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
+STRIPE_PLANS = {
+    "standard": {
+        "name": "Standard",
+        "price_id": os.environ.get("STRIPE_PRICE_ID_STANDARD", ""),
+        "amount": 1980,
+        "max_members": 30,
+        "recommended": True,
+    },
+    "pro1": {
+        "name": "Pro 1",
+        "price_id": os.environ.get("STRIPE_PRICE_ID_PRO1", ""),
+        "amount": 4980,
+        "max_members": 100,
+        "recommended": False,
+    },
+    "pro2": {
+        "name": "Pro 2",
+        "price_id": os.environ.get("STRIPE_PRICE_ID_PRO2", ""),
+        "amount": 9980,
+        "max_members": 250,
+        "recommended": False,
+    },
+}
+
+# 認証アプリに表示されるサービス名（TOTP の issuer）
+APP_NAME = os.environ.get("APP_NAME", "ShiftTimes")
+
+SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")
+DOMAIN_URL = os.environ.get("DOMAIN_URL", SITE_URL)
+
+# Email
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend" if DEBUG
+    else "django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", 25))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "false").lower() == "true"
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "no-reply@example.com")
+
+# ユーザーアクティベーション・認証系の有効期限
+USER_LOGIN_VERIFY_EMAIL_EXPIRED_HOURS = int(os.environ.get("USER_LOGIN_VERIFY_EMAIL_EXPIRED_HOURS", 72))
+USER_LOGIN_VERIFY_EMAIL_EXPIRED_MINUTES = int(os.environ.get("USER_LOGIN_VERIFY_EMAIL_EXPIRED_MINUTES", 30))
+SIGN_UP_EXPIRED_DAYS = int(os.environ.get("SIGN_UP_EXPIRED_DAYS", 7))

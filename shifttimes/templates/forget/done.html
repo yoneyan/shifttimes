@@ -1,11 +1,16 @@
 {% extends 'base.html' %}
-{% load static %}
+{% block title %}メールを送信しました | {% endblock %}
+{% block page_title %}メールを送信しました{% endblock %}
 {% block content %}
-  <p>
-    パスワード再設定用のメールを送信しました。<br>
-    メールに記載されているリンクから再設定を行ってください。
-  </p>
+  <div class="card form-narrow">
+    <div class="card-body">
+      <p class="mb-3">
+        パスワード再設定用のメールを送信しました。<br>
+        メールに記載されたリンクから再設定してください。
+      </p>
+      <a class="btn btn-outline-secondary" href="{% url 'login' %}">
+        <i class="bi bi-arrow-left me-1"></i>ログイン画面へ
+      </a>
+    </div>
+  </div>
 {% endblock content %}
-
-{% block javascript %}
-{% endblock javascript %}

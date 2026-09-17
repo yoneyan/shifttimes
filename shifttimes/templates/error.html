@@ -1,13 +1,14 @@
 {% extends 'base.html' %}
+{% block title %}エラー | {% endblock %}
+{% block page_title %}エラー{% endblock %}
 {% block content %}
-  <div class="container">
-    <div class="row">
-      <div class="container py-4 mb-auto">
-        <div class="h-900 p-2 rounded-3">
-          <h2>{{ error }}</h2>
-          <h2>{{ text }}</h2>
-        </div>
-      </div>
+  <div class="card form-narrow border-danger">
+    <div class="card-body">
+      {% if error %}<p class="mb-2">{{ error }}</p>{% endif %}
+      {% if text %}<p class="mb-3">{{ text }}</p>{% endif %}
+      <a class="btn btn-outline-secondary" href="{% url 'index' %}">
+        <i class="bi bi-house me-1"></i>ホームへ戻る
+      </a>
     </div>
   </div>
 {% endblock content %}

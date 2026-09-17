@@ -49,11 +49,8 @@ class User(SimpleHistoryAdmin):
 class Group(SimpleHistoryAdmin):
     fieldsets = (
         (None, {"fields": (
-            "name", "name_jp", "allow_service_add", "allow_jpnic_add", "status", "is_pass",
-            "comment")}),
+            "name", "name_jp", "status", "comment")}),
         ("Membership", {"fields": ("membership_type", "membership_expired_at")}),
-        ("Question", {"fields": ("agree", "question")}),
-        ("Stripe", {"fields": ("stripe_customer_id", "stripe_subscription_id")}),
         (
             "Personal info",
             {
@@ -76,8 +73,6 @@ class Group(SimpleHistoryAdmin):
     )
     list_filter = (
         "membership_type",
-        "is_pass",
-        "allow_service_add",
     )
     search_fields = (
         "name",

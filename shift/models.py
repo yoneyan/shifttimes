@@ -1,0 +1,192 @@
+from django.conf import settings
+from django.db import models
+from django.db.models import Q
+from django.utils import timezone
+from simple_history.models import HistoricalRecords
+
+from shifttimes.models import MediumTextField
+
+
+WEEKDAY_CHOICES = (
+    (0, "月"),
+    (1, "火"),
+    (2, "水"),
+    (3, "木"),
+    (4, "金"),
+    (5, "土"),
+    (6, "日"),
+)
+
+
+class TimeSlot(models.Model):
+    """管理者が作成する時間帯マスタ"""
+
+    class Meta:
+        ordering = ("start_time",)
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(start_time__lt=models.F("end_time")),
+                name="time_slot_start_before_end",
+            ),
+        ]
+        verbose_name = "時間帯"
+        verbose_name_plural = "時間帯"
+
+    name = models.CharField("時間帯名", max_length=100)
+    start_time = models.TimeField("開始時刻")
+    end_time = models.TimeField("終了時刻")
+    is_active = models.BooleanField("有効", default=True)
+    created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField("更新日", auto_now=True)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return "%s (%s〜%s)" % (self.name, self.start_time.strftime("%H:%M"), self.end_time.strftime("%H:%M"))
+
+    @property
+    def display_label(self):
+        """時間帯名が時刻そのものの場合に時刻を二重表示しない表示用ラベル"""
+        start = self.start_time.strftime("%H:%M")
+        end = self.end_time.strftime("%H:%M")
+        if start in self.name and end in self.name:
+            return self.name
+        return "%s %s〜%s" % (self.name, start, end)
+
+
+class OpeningScheduleType(models.Model):
+    """グループごとに変更できる開講区分"""
+
+    class Meta:
+        ordering = ("display_order", "name")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("group", "name"),
+                name="opening_schedule_type_unique_name",
+            ),
+        ]
+        verbose_name = "開講区分"
+        verbose_name_plural = "開講区分"
+
+    created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField("更新日", auto_now=True)
+    group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE, related_name="opening_schedule_types",
+                              verbose_name="グループ")
+    name = models.CharField("区分名", max_length=100)
+    blocks_shift_input = models.BooleanField("シフト入力不可", default=False)
+    is_active = models.BooleanField("有効", default=True)
+    display_order = models.PositiveSmallIntegerField("表示順", default=100)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return "%s: %s" % (self.group, self.name)
+
+
+class DateOpeningSchedule(models.Model):
+    """日付ごとの開講スケジュール上書き"""
+
+    class Meta:
+        ordering = ("work_date",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("group", "work_date"),
+                name="date_opening_schedule_unique_date",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("group", "work_date")),
+        ]
+        verbose_name = "日付別開講スケジュール"
+        verbose_name_plural = "日付別開講スケジュール"
+
+    created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField("更新日", auto_now=True)
+    group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE, related_name="date_opening_schedules",
+                              verbose_name="グループ")
+    work_date = models.DateField("日付", db_index=True)
+    schedule_type = models.ForeignKey(OpeningScheduleType, on_delete=models.PROTECT,
+                                      related_name="date_opening_schedules", verbose_name="開講区分")
+    note = MediumTextField("メモ", default="", blank=True)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return "%s: %s [%s]" % (self.group, self.work_date, self.schedule_type.name)
+
+
+class ShiftEntry(models.Model):
+    """ユーザーの時間帯別シフト希望"""
+
+    class Meta:
+        ordering = ("work_date", "time_slot__start_time")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("group", "user", "work_date", "time_slot"),
+                name="shift_entry_unique_time_slot",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("group", "work_date")),
+            models.Index(fields=("user", "work_date")),
+        ]
+        verbose_name = "シフト希望"
+        verbose_name_plural = "シフト希望"
+
+    AVAILABLE = "available"
+    UNAVAILABLE = "unavailable"
+    MAYBE = "maybe"
+    STATUS_CHOICES = (
+        (AVAILABLE, "勤務可能"),
+        (UNAVAILABLE, "勤務不可"),
+        (MAYBE, "要相談"),
+    )
+
+    created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField("更新日", auto_now=True)
+    group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE, related_name="shift_entries",
+                              verbose_name="グループ")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="shift_entries",
+                             verbose_name="ユーザー")
+    work_date = models.DateField("勤務日", db_index=True)
+    time_slot = models.ForeignKey(TimeSlot, on_delete=models.PROTECT, related_name="shift_entries",
+                                  verbose_name="時間帯")
+    status = models.CharField("ステータス", max_length=20, choices=STATUS_CHOICES, default=AVAILABLE)
+    note = MediumTextField("メモ", default="", blank=True)
+    is_draft = models.BooleanField("下書き", default=False, db_index=True)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return "%s: %s %s [%s]%s" % (
+            self.id, self.work_date, self.time_slot, self.get_status_display(),
+            " [下書き]" if self.is_draft else "",
+        )
+
+
+class ShiftDeadline(models.Model):
+    """シフト希望提出の期限日（グループ・期間ごとに管理者が設定）"""
+
+    class Meta:
+        ordering = ("period_start",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("group", "period_start"),
+                name="shift_deadline_unique_period",
+            ),
+        ]
+        verbose_name = "シフト提出期限"
+        verbose_name_plural = "シフト提出期限"
+
+    created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField("更新日", auto_now=True)
+    group = models.ForeignKey(
+        "custom_auth.Group", on_delete=models.CASCADE,
+        related_name="shift_deadlines", verbose_name="グループ",
+    )
+    period_start = models.DateField("対象期間 開始日")
+    period_end = models.DateField("対象期間 終了日")
+    deadline_date = models.DateField("提出期限日")
+    note = MediumTextField("メモ", default="", blank=True)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return "%s: %s〜%s (期限 %s)" % (
+            self.group, self.period_start, self.period_end, self.deadline_date
+        )

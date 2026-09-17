@@ -1,0 +1,335 @@
+{% extends 'base.html' %}
+{% block extrahead %}
+  <style>
+    .entry-table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .entry-table th,
+    .entry-table td {
+      border: 1px solid #adb5bd;
+      padding: 0;
+      text-align: center;
+    }
+
+    .entry-table thead th {
+      background: #f1f3f5;
+      font-size: .8rem;
+      font-weight: 700;
+      padding: .35rem .3rem;
+      white-space: nowrap;
+    }
+
+    .entry-table tbody tr.entry-row {
+      cursor: pointer;
+    }
+
+    .entry-table tbody tr.entry-row:hover td {
+      filter: brightness(.96);
+    }
+
+    .entry-date-cell {
+      background: #fff;
+      font-weight: 700;
+      padding: .45rem .5rem !important;
+      white-space: nowrap;
+    }
+
+    .entry-date-cell .entry-date-sat { color: #1565c0; }
+    .entry-date-cell .entry-date-sun { color: #c62828; }
+    .entry-row-today .entry-date-cell { background: #fff8e1; }
+
+    .entry-status-cell {
+      font-size: 1.05rem;
+      font-weight: 700;
+      padding: .45rem .3rem !important;
+    }
+
+    .entry-status-available { background: #c8e6c9; }
+    .entry-status-maybe { background: #ffe0b2; }
+    .entry-status-unavailable { background: #f8bbc0; }
+    .entry-status-blank { background: #fff; color: #adb5bd; }
+    .entry-row-blocked td { background: #e9ecef; color: #868e96; }
+
+    .entry-slot-row + .entry-slot-row {
+      border-top: 1px solid #e9ecef;
+      margin-top: .6rem;
+      padding-top: .6rem;
+    }
+
+    .entry-choice-symbol {
+      font-size: 1.25rem;
+      line-height: 1.2;
+    }
+
+    @media (max-width: 575.98px) {
+      .entry-table thead th { font-size: .68rem; padding: .3rem .15rem; }
+      .entry-date-cell { font-size: .8rem; padding: .4rem .3rem !important; }
+      .entry-status-cell { font-size: 1rem; padding: .4rem .15rem !important; }
+    }
+  </style>
+{% endblock extrahead %}
+
+{% block title %}シフト希望登録 | {% endblock %}
+{% block page_title %}シフト希望登録{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'shift:index' %}?group={{ group.id }}">
+    <i class="bi bi-arrow-left me-1"></i>戻る
+  </a>
+{% endblock %}
+{% block content %}
+    {# ===== 月ナビゲーション ===== #}
+  <div class="d-flex align-items-center gap-2 mb-3">
+    {% if prev_month %}
+      <a class="btn btn-outline-secondary btn-sm" href="?month={{ prev_month|date:'Y-m' }}" aria-label="前の月">
+        <i class="bi bi-chevron-left"></i>
+      </a>
+    {% else %}
+      <span class="btn btn-outline-secondary btn-sm disabled"><i class="bi bi-chevron-left"></i></span>
+    {% endif %}
+    <span class="fw-bold">{{ current_month|date:'Y年n月' }}</span>
+    {% if next_month %}
+      <a class="btn btn-outline-secondary btn-sm" href="?month={{ next_month|date:'Y-m' }}" aria-label="次の月">
+        <i class="bi bi-chevron-right"></i>
+      </a>
+    {% else %}
+      <span class="btn btn-outline-secondary btn-sm disabled"><i class="bi bi-chevron-right"></i></span>
+    {% endif %}
+  </div>
+
+  {% if open_period.is_default %}
+    <div class="alert alert-secondary py-2 small" role="alert">
+      提出期限は未設定です。{{ open_period.period_start|date:'n/j' }}〜{{ open_period.period_end|date:'n/j' }} の希望を登録できます。
+    </div>
+  {% else %}
+    <div class="alert alert-info py-2 small" role="alert">
+      対象期間 {{ open_period.period_start|date:'n/j' }}〜{{ open_period.period_end|date:'n/j' }}
+      ／ 提出期限 <strong>{{ open_period.deadline_date|date:'n/j' }}</strong>
+    </div>
+  {% endif %}
+
+  <p class="small mb-2">日付の行をタップすると、その日のシフト希望を登録できます。</p>
+
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#weekdayEntryModal"
+            {% if not weekday_options %}disabled{% endif %}>
+      <i class="bi bi-calendar-week me-1"></i>曜日一括登録
+    </button>
+    <form method="post" action="{% url 'shift:shift_confirm' group.id %}" class="d-inline">
+      {% csrf_token %}
+      <input type="hidden" name="date_from" value="{{ open_period.period_start|date:'Y-m-d' }}">
+      <input type="hidden" name="date_to" value="{{ open_period.period_end|date:'Y-m-d' }}">
+      <button type="submit" class="btn btn-success" {% if not draft_count %}disabled{% endif %}>
+        <i class="bi bi-check-lg me-1"></i>適用（確定）{% if draft_count %} {{ draft_count }}件{% endif %}
+      </button>
+    </form>
+  </div>
+
+  {% if draft_count %}
+    <div class="alert alert-warning py-2 small" role="alert">
+      <i class="bi bi-exclamation-triangle-fill me-1"></i>
+      未確定の希望が {{ draft_count }} 件あります。登録が終わったら「適用（確定）」を押してください。
+    </div>
+  {% endif %}
+
+  <div class="table-responsive mb-4">
+    <table class="entry-table">
+      <thead>
+      <tr>
+        <th scope="col">日付</th>
+        {% for time_slot in time_slots %}
+          <th scope="col">{{ time_slot.name }}</th>
+        {% endfor %}
+      </tr>
+      </thead>
+      <tbody>
+      {% for row in rows %}
+        <tr class="{% if row.is_shift_blocked %}entry-row-blocked{% else %}entry-row{% endif %}{% if row.is_today %} entry-row-today{% endif %}"
+            {% if not row.is_shift_blocked %}
+            data-date="{{ row.work_date|date:'Y-m-d' }}"
+            data-label="{{ row.work_date|date:'n月j日 (D)' }}"
+            data-statuses="{{ row.statuses_json }}"
+            data-comment="{{ row.comment }}"
+            {% endif %}>
+          <td class="entry-date-cell">
+            <span
+                class="{% if row.work_date|date:'w' == '0' %}entry-date-sun{% elif row.work_date|date:'w' == '6' %}entry-date-sat{% endif %}">
+              {{ row.work_date|date:'j' }}日({{ row.work_date|date:'D' }})
+            </span>
+            {% if row.opening_schedule %}
+              <div class="small text-muted">{{ row.opening_schedule.schedule_type.name|truncatechars:6 }}</div>
+            {% endif %}
+          </td>
+          {% if row.is_shift_blocked %}
+            <td colspan="{{ time_slots|length }}" class="small">シフト入力できません</td>
+          {% else %}
+            {% for cell in row.cells %}
+              <td class="entry-status-cell {% if cell.status == 'available' %}entry-status-available{% elif cell.status == 'maybe' %}entry-status-maybe{% elif cell.status == 'unavailable' %}entry-status-unavailable{% else %}entry-status-blank{% endif %}">
+                {% if cell.status == 'available' %}○{% elif cell.status == 'maybe' %}△{% elif cell.status == 'unavailable' %}×{% else %}－{% endif %}
+              </td>
+            {% endfor %}
+          {% endif %}
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="{{ time_slots|length|add:1 }}" class="text-muted py-4">表示できる日付がありません。</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ===== 日付ごとの登録ダイアログ ===== #}
+  <div class="modal fade" id="dateEntryModal" tabindex="-1" aria-labelledby="dateEntryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="month" value="{{ current_month_value }}">
+          <input type="hidden" name="work_date" id="dateEntryWorkDate" value="">
+          <div class="modal-header">
+            <h5 class="modal-title" id="dateEntryModalLabel">シフト希望</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+          </div>
+          <div class="modal-body">
+            <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
+              <span class="fw-bold small">一括選択</span>
+              <div class="shift-choice-group shift-choice-group-sm shift-choice-group-compact" role="group">
+                {% for value, symbol, label in status_choices %}
+                  <button type="button"
+                          class="btn btn-sm {% if value == 'available' %}btn-outline-success{% elif value == 'maybe' %}btn-outline-warning{% elif value == 'unavailable' %}btn-outline-danger{% else %}btn-outline-secondary{% endif %} entry-bulk-select"
+                          data-status="{{ value }}" title="{{ label }}">{{ symbol }}</button>
+                {% endfor %}
+              </div>
+            </div>
+            {% include 'shift/_entry_slot_choices.html' with prefix='date' %}
+            <div class="mt-3">
+              <label class="form-label small fw-bold" for="dateEntryComment">コメント（任意）</label>
+              <input type="text" class="form-control" id="dateEntryComment" name="comment" maxlength="200"
+                     placeholder="例: 19時以降なら勤務できます">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>登録
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# ===== 曜日一括登録ダイアログ ===== #}
+  <div class="modal fade" id="weekdayEntryModal" tabindex="-1" aria-labelledby="weekdayEntryModalLabel"
+       aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="month" value="{{ current_month_value }}">
+          <div class="modal-header">
+            <h5 class="modal-title" id="weekdayEntryModalLabel">{{ current_month|date:'Y年n月' }} 曜日一括登録</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label small fw-bold" for="weekdayEntrySelect">曜日</label>
+              <select class="form-select" id="weekdayEntrySelect" name="weekday">
+                {% for option in weekday_options %}
+                  <option value="{{ option.value }}" data-days="{{ option.days_label }}">
+                    {{ option.label }}（{{ option.count }}日）
+                  </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">日付：<span id="weekdayEntryDays"></span></div>
+            </div>
+            <div class="d-flex align-items-center flex-wrap gap-2 mb-3">
+              <span class="fw-bold small">一括選択</span>
+              <div class="shift-choice-group shift-choice-group-sm shift-choice-group-compact" role="group">
+                {% for value, symbol, label in status_choices %}
+                  <button type="button"
+                          class="btn btn-sm {% if value == 'available' %}btn-outline-success{% elif value == 'maybe' %}btn-outline-warning{% elif value == 'unavailable' %}btn-outline-danger{% else %}btn-outline-secondary{% endif %} entry-bulk-select"
+                          data-status="{{ value }}" title="{{ label }}">{{ symbol }}</button>
+                {% endfor %}
+              </div>
+            </div>
+            {% include 'shift/_entry_slot_choices.html' with prefix='weekday' %}
+            <div class="mt-3">
+              <label class="form-label small fw-bold" for="weekdayEntryComment">コメント（任意）</label>
+              <input type="text" class="form-control" id="weekdayEntryComment" name="comment" maxlength="200">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-check-lg me-1"></i>まとめて登録
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascript %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const dateModalEl = document.getElementById("dateEntryModal");
+      const dateModal = new bootstrap.Modal(dateModalEl);
+      const workDateInput = document.getElementById("dateEntryWorkDate");
+      const commentInput = document.getElementById("dateEntryComment");
+      const modalLabel = document.getElementById("dateEntryModalLabel");
+
+      function setStatuses(scope, statuses) {
+        scope.querySelectorAll(".entry-slot-status").forEach(function (radio) {
+          const wanted = statuses[radio.dataset.slot] || "";
+          radio.checked = radio.value === wanted;
+        });
+      }
+
+      document.querySelectorAll("tr.entry-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+          workDateInput.value = row.dataset.date;
+          modalLabel.textContent = row.dataset.label + " のシフト希望";
+          commentInput.value = row.dataset.comment || "";
+          setStatuses(dateModalEl, JSON.parse(row.dataset.statuses || "{}"));
+          dateModal.show();
+        });
+      });
+
+      document.querySelectorAll(".entry-bulk-select").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          const scope = btn.closest(".modal-body");
+          scope.querySelectorAll(".entry-slot-status").forEach(function (radio) {
+            radio.checked = radio.value === btn.dataset.status;
+          });
+        });
+      });
+
+      // カレンダーなどから ?date= 付きで来た場合はその日のダイアログを開く
+      const focusDate = "{{ focus_date|date:'Y-m-d' }}";
+      if (focusDate) {
+        const focusRow = document.querySelector('tr.entry-row[data-date="' + focusDate + '"]');
+        if (focusRow) {
+          focusRow.click();
+        }
+      }
+
+      const weekdaySelect = document.getElementById("weekdayEntrySelect");
+      const weekdayDays = document.getElementById("weekdayEntryDays");
+      if (weekdaySelect) {
+        const showDays = function () {
+          const option = weekdaySelect.options[weekdaySelect.selectedIndex];
+          weekdayDays.textContent = option ? option.dataset.days : "";
+        };
+        weekdaySelect.addEventListener("change", showDays);
+        showDays();
+      }
+    });
+  </script>
+{% endblock javascript %}

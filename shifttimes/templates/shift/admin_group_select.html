@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} | {% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">管理するグループを選択してください。</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'shift:index' %}">
+    <i class="bi bi-arrow-left me-1"></i>シフト管理へ
+  </a>
+{% endblock %}
+{% block content %}
+
+  <div class="row g-3">
+    {% for group_card in group_cards %}
+      <div class="col-12 col-md-6 col-xl-4">
+        <a class="card h-100 text-decoration-none text-reset" href="{{ group_card.url }}">
+          <div class="card-body">
+            <h2 class="h5 mb-1">{{ group_card.group.name_jp }}</h2>
+            <p class="text-muted mb-0">{{ group_card.group.name }}</p>
+          </div>
+        </a>
+      </div>
+    {% empty %}
+      <div class="col-12">
+        <div class="alert alert-info" role="alert">管理できるグループがありません。</div>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock content %}

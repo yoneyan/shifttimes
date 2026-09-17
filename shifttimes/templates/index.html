@@ -1,16 +1,113 @@
 {% extends 'base.html' %}
 
+{% block title %}ホーム | {% endblock %}
+{% block page_title %}ようこそ、{{ request.user.get_display_name }}さん{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ request.user.email }}</p>
+{% endblock %}
 {% block content %}
-    <h1 class="h3 mb-3 font-weight-normal">ログインが必要です</h1>
-    {#    <form class="form-signin">#}
-    {#        <h1 class="h3 mb-3 font-weight-normal">ログインが必要です</h1>#}
-    {#        <label for="inputId" class="sr-only">ID</label>#}
-    {#        <input type="text" id="inputId" class="form-control" placeholder="ID" required autofocus>#}
-    {#        <label for="inputPassword" class="sr-only">Password</label>#}
-    {#        <input type="password" id="inputPassword" class="form-control" placeholder="Password" required>#}
-    {#        <br/>#}
-    {#        <button class="btn btn-lg btn-primary btn-block" type="submit">Sign in</button>#}
-    {#    </form>#}
+
+  {% if total_draft_count %}
+    <div class="alert alert-warning d-flex align-items-center gap-2 mb-4" role="alert">
+      <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0"></i>
+      <div>
+        <strong>未確定のシフト希望が {{ total_draft_count }} 件あります。</strong>
+        <a href="{% url 'notice:index' %}" class="ms-2 btn btn-sm btn-warning py-0">確認する</a>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if notices %}
+    <section class="mb-4">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <h2 class="h5 mb-0">お知らせ</h2>
+        <a href="{% url 'notice:index' %}" class="small">すべて見る</a>
+      </div>
+      {% for notice in notices %}
+        <div class="card mb-2 {% if notice.is_fail %}border-danger{% elif notice.is_important %}border-warning{% endif %}">
+          <div class="card-body py-2">
+            {% if notice.is_fail %}
+              <span class="badge bg-danger me-1">障害</span>
+            {% elif notice.is_important %}
+              <span class="badge bg-warning text-dark me-1">重要</span>
+            {% elif notice.is_info %}
+              <span class="badge bg-info text-dark me-1">情報</span>
+            {% endif %}
+            {{ notice.title }}
+          </div>
+        </div>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  {% if has_admin_groups %}
+    <section class="mb-4">
+      <h2 class="h5 mb-2">管理者メニュー</h2>
+      <div class="d-flex flex-wrap gap-2">
+        {% for card in group_cards %}
+          {% if card.is_admin %}
+            <a class="btn btn-outline-dark btn-sm" href="{% url 'custom_auth_group:admin_home' card.group.id %}">
+              <i class="bi bi-gear me-1"></i>{{ card.group.name_jp }} 管理者ページ
+            </a>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="mb-4">
+    <h2 class="h5 mb-3">シフト</h2>
+    <div class="row g-3">
+      {% for card in group_cards %}
+        <div class="col-12 col-md-6 col-xl-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-start">
+                <h3 class="h6 mb-1">{{ card.group.name_jp }}</h3>
+                {% if card.is_admin %}<span class="badge text-bg-dark">管理者</span>{% endif %}
+              </div>
+              <p class="small text-muted mb-3">{{ card.group.name }}</p>
+              <div class="d-grid gap-2 d-sm-flex flex-sm-wrap">
+                <a class="btn btn-primary" href="{% url 'shift:entry_table' card.group.id %}">
+                  <i class="bi bi-pencil-square me-1"></i>シフト希望を登録
+                </a>
+                <a class="btn btn-outline-secondary" href="{% url 'shift:index' %}?group={{ card.group.id }}">
+                  <i class="bi bi-calendar3 me-1"></i>カレンダーを見る
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% empty %}
+        <div class="col-12">
+          <div class="alert alert-info">
+            所属中のグループがありません。<a href="{% url 'custom_auth_group:add' %}">新しくグループを作成</a>できます。
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2 class="h5 mb-2">アカウント</h2>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth:edit_profile' %}">
+        <i class="bi bi-person me-1"></i>プロフィール編集
+      </a>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth:email_change' %}">
+        <i class="bi bi-envelope me-1"></i>メールアドレス変更
+      </a>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth:password_change' %}">
+        <i class="bi bi-key me-1"></i>パスワード変更
+      </a>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth_group:index' %}">
+        <i class="bi bi-people me-1"></i>グループ一覧
+      </a>
+      <a class="btn btn-outline-danger btn-sm" href="{% url 'logout' %}">
+        <i class="bi bi-box-arrow-right me-1"></i>ログアウト
+      </a>
+    </div>
+  </section>
 {% endblock content %}
 
 {% block javascript %}

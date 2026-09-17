@@ -1,0 +1,14 @@
+{# 月ナビゲーション（カレンダー共通） #}
+<div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+  <div class="btn-group" role="group" aria-label="月の移動">
+    <a class="btn btn-outline-secondary btn-sm" href="?month={{ prev_month|date:'Y-m' }}" aria-label="前の月">
+      <i class="bi bi-chevron-left"></i>
+    </a>
+    <a class="btn btn-outline-secondary btn-sm {% if is_current_month %}disabled{% endif %}"
+       href="?month={{ today_month_value }}">今日</a>
+    <a class="btn btn-outline-secondary btn-sm" href="?month={{ next_month|date:'Y-m' }}" aria-label="次の月">
+      <i class="bi bi-chevron-right"></i>
+    </a>
+  </div>
+  <h2 class="h5 mb-0">{{ current_month|date:'Y年n月' }}</h2>
+</div>

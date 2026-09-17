@@ -20,6 +20,7 @@ from django.conf.urls.static import static
 from django.urls import path, include
 
 from custom_auth.views import activate_user
+from custom_auth.billing_views import stripe_webhook
 from shifttimes import views
 
 urlpatterns = [
@@ -28,8 +29,11 @@ urlpatterns = [
     path("", views.index, name="index"),
     path("forget/", include("custom_auth.forget_urls")),
     path("notice/", include("notice.urls")),
+    path("shift/", include("shift.urls")),
     path("activate/<uuid:activate_token>/", activate_user, name="activate_user"),
     path("profile/", include("custom_auth.urls")),
+    path("group/", include("custom_auth.group_urls")),
+    path("stripe/webhook/", stripe_webhook, name="stripe_webhook"),
     path('admin/', admin.site.urls),
 ]
 

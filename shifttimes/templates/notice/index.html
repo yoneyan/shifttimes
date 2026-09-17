@@ -1,4 +1,94 @@
 {% extends 'base.html' %}
+{% block title %}お知らせ | {% endblock %}
+{% block page_title %}お知らせ{% endblock %}
 {% block content %}
+
+{% if draft_groups %}
+<div class="alert alert-warning d-flex align-items-start gap-2 mb-3" role="alert">
+  <i class="bi bi-exclamation-triangle-fill fs-5 mt-1 flex-shrink-0"></i>
+  <div>
+    <strong>確定していないシフト希望があります。</strong>
+    内容を確認して確定してください。
+    <ul class="mb-1 mt-1">
+      {% for g in draft_groups %}
+      <li>
+        {{ g.name_jp }}
+        <a href="{% url 'shift:shift_confirm' g.id %}" class="ms-2 btn btn-sm btn-warning py-0">
+          <i class="bi bi-check-lg me-1"></i>確定する
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{% if deadline_alerts %}
+  {% for alert in deadline_alerts %}
+    <div class="alert {% if alert.is_overdue %}alert-danger{% elif alert.days_left <= 3 %}alert-warning{% else %}alert-info{% endif %} d-flex align-items-start gap-2 mb-3" role="alert">
+      <i class="bi bi-clock{% if alert.is_overdue %}-history{% endif %} fs-5 mt-1 flex-shrink-0"></i>
+      <div>
+        {% if alert.is_overdue %}
+          <strong>【期限切れ】{{ alert.group.name_jp }}</strong> のシフト希望提出期限（{{ alert.deadline.deadline_date|date:"Y/m/d" }}）を過ぎています。
+        {% elif alert.days_left == 0 %}
+          <strong>【本日期限】{{ alert.group.name_jp }}</strong> のシフト希望提出期限は本日（{{ alert.deadline.deadline_date|date:"Y/m/d" }}）です。
+        {% else %}
+          <strong>{{ alert.group.name_jp }}</strong> のシフト希望提出期限まであと <strong>{{ alert.days_left }} 日</strong>（{{ alert.deadline.deadline_date|date:"Y/m/d" }}）です。
+        {% endif %}
+        {% if alert.deadline.note %}<div class="small mt-1">{{ alert.deadline.note }}</div>{% endif %}
+        <a href="{% url 'shift:shift_confirm' alert.group.id %}" class="btn btn-sm btn-outline-primary mt-1">
+          <i class="bi bi-check-lg me-1"></i>確定ページへ
+        </a>
+      </div>
+    </div>
+  {% endfor %}
+{% endif %}
+
+{% if unpaid_groups %}
+<div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
+  <i class="bi bi-exclamation-triangle-fill fs-5 mt-1"></i>
+  <div>
+    <strong>未課金のグループがあります。</strong>
+    サービスを継続してご利用いただくには、各グループのサブスクリプションをご契約ください。
+    <ul class="mb-1 mt-1">
+      {% for group in unpaid_groups %}
+      <li>
+        {{ group.name_jp }}
+        <a href="{% url 'custom_auth_group:billing' group.id %}" class="ms-2 btn btn-sm btn-warning py-0">
+          今すぐ契約する
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{% if notices %}
+  {% for notice in notices %}
+  <div class="card mb-3 {% if notice.is_fail %}border-danger{% elif notice.is_important %}border-warning{% endif %}">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>
+        {% if notice.is_fail %}
+          <span class="badge bg-danger me-1">障害</span>
+        {% elif notice.is_important %}
+          <span class="badge bg-warning text-dark me-1">重要</span>
+        {% elif notice.is_info %}
+          <span class="badge bg-info text-dark me-1">情報</span>
+        {% endif %}
+        {{ notice.type1 }} — {{ notice.title }}
+      </span>
+      <small class="text-muted">{{ notice.start_at|date:"Y/m/d" }}</small>
+    </div>
+    {% if notice.body %}
+    <div class="card-body">
+      <p class="card-text" style="white-space: pre-wrap;">{{ notice.body }}</p>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+{% else %}
+  <p class="text-muted">現在のお知らせはありません。</p>
+{% endif %}
 
 {% endblock content %}

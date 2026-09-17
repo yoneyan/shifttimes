@@ -1,0 +1,20 @@
+{% for time_slot in time_slots %}
+  <div class="entry-slot-row">
+    <div class="fw-bold small mb-1">{{ time_slot.display_label }}</div>
+    <div class="shift-choice-group" role="group" aria-label="{{ time_slot.name }} の希望">
+      {% for value, symbol, label in status_choices %}
+        <input type="radio" class="btn-check entry-slot-status" autocomplete="off"
+               name="status_{{ time_slot.id }}"
+               id="{{ prefix }}_status_{{ time_slot.id }}_{{ value|default:'blank' }}"
+               value="{{ value }}" data-slot="{{ time_slot.id }}"
+               {% if not value %}checked{% endif %}>
+        <label
+            class="btn {% if value == 'available' %}btn-outline-success{% elif value == 'maybe' %}btn-outline-warning{% elif value == 'unavailable' %}btn-outline-danger{% else %}btn-outline-secondary{% endif %}"
+            for="{{ prefix }}_status_{{ time_slot.id }}_{{ value|default:'blank' }}" aria-label="{{ label }}">
+          <span class="entry-choice-symbol">{{ symbol }}</span>
+          <span class="d-none d-md-inline ms-1">{{ label }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </div>
+{% endfor %}

@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}管理者ページ | {% endblock %}
+{% block page_title %}管理者ページ{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }} / {{ group.name }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'index' %}">
+    <i class="bi bi-house me-1"></i>ホームへ戻る
+  </a>
+{% endblock %}
+{% block content %}
+    <div class="card mb-4">
+    <div class="card-body">
+      <h2 class="h6 mb-3">プロフィール</h2>
+      <p class="mb-1"><strong>{{ request.user.get_display_name }}</strong></p>
+      <p class="mb-0 text-muted small">
+        UserID: {{ request.user.username }} / {{ request.user.email }}
+      </p>
+    </div>
+    <div class="card-footer bg-white">
+      <span class="badge text-bg-secondary">メンバー数: {{ member_count }}</span>
+    </div>
+  </div>
+
+  <section class="mb-4">
+    <h2 class="h5 mb-3">シフト・スケジュール設定</h2>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-primary" href="{% url 'shift:schedule_settings' group.id %}">
+        <i class="bi bi-calendar-week me-1"></i>開講スケジュール設定
+      </a>
+      <a class="btn btn-outline-primary" href="{% url 'shift:summary' group.id %}">
+        <i class="bi bi-grid-3x3-gap me-1"></i>シフト提出状況
+      </a>
+    </div>
+  </section>
+
+  <section class="mb-4">
+    <h2 class="h5 mb-3">ユーザ登録</h2>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-primary" href="{% url 'custom_auth_group:register_member' group.id %}">
+        <i class="bi bi-person-plus me-1"></i>ユーザ登録
+      </a>
+      <a class="btn btn-outline-danger" href="{% url 'custom_auth_group:register_admin' group.id %}">
+        <i class="bi bi-person-badge me-1"></i>ユーザ登録（管理者）
+      </a>
+    </div>
+  </section>
+
+  <section class="mb-4">
+    <h2 class="h5 mb-3">グループ設定</h2>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-secondary" href="{% url 'custom_auth_group:edit' group.id %}">
+        <i class="bi bi-pencil-square me-1"></i>グループ情報の編集
+      </a>
+      <a class="btn btn-outline-secondary" href="{% url 'custom_auth_group:permission' group.id %}">
+        <i class="bi bi-people me-1"></i>権限設定
+      </a>
+      <a class="btn btn-outline-warning" href="{% url 'custom_auth_group:billing' group.id %}">
+        <i class="bi bi-credit-card me-1"></i>請求管理
+      </a>
+    </div>
+  </section>
+
+  <a href="{% url 'custom_auth_group:index' %}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>グループ一覧へ戻る
+  </a>
+{% endblock content %}

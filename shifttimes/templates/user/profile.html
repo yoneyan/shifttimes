@@ -1,61 +1,47 @@
 {% extends 'base.html' %}
+{% block title %}アカウント情報 | {% endblock %}
+{% block page_title %}アカウント情報{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ request.user.get_display_name }}</p>
+{% endblock %}
 {% block content %}
-  <div class="container">
-    <div class="row">
-      <div class="container py-4 mb-auto">
-        <div class="h-900 p-2 rounded-3">
-          <h2 class="card-title">Profile</h2>
-          <br/>
-          <div class="card mb-2">
-            <div class="card-header">
-              ID: {{ user.id }}
-            </div>
-            <div class="card-body">
-              <h5 class="card-title">{{ user.username }}
-                ({{ user.username_jp }})</h5>
-              <div class="container">
-                <div class="row">
-
-                </div>
-              </div>
-            </div>
-            <div class="card-footer">
-              <span
-                  class="badge bg-secondary">作成日: {{ request.user.created_at }}</span>
-              <span
-                  class="badge bg-secondary">最終Login日: {{ request.user.last_login }}</span>
-              {% if user.is_active %}
-                <span class="badge bg-success">有効</span>
-              {% else %}
-                <span class="badge bg-danger">無効</span>{% endif %}
-              {% if user.is_staff %}
-                <span class="badge bg-primary">dsbd管理者</span>{% endif %}
-            </div>
-          </div>
-          <hr/>
-          <a class="btn btn-primary btn-sm"
-             href="{% url 'custom_auth:password_change' %}" role="button"
-             aria-expanded="false">パスワード変更</a>
-          <a class="btn btn-primary btn-sm"
-             href="{% url 'custom_auth:email_change' %}" role="button"
-             aria-expanded="false">メールアドレス変更</a>
-          <a class="btn btn-primary btn-sm"
-             href="{% url 'custom_auth:edit_profile' %}" role="button"
-             aria-expanded="false">プロフィール閲覧・変更</a>
-          <hr/>
-          <div class="card">
-            <div class="card-body">
-              <h5 class="card-title">2段階認証のデバイス追加</h5>
-              <div class="container">
-                2段階認証用のデバイスを追加したい場合はこちらを選択してください。
-              </div>
-              <br/>
-              <a type="submit" class="btn btn-primary"
-                 href="{% url 'custom_auth:list_two_auth' %}">2段階認証のデバイス追加</a>
-            </div>
-          </div>
-        </div>
+  <div class="card mb-4">
+    <div class="card-body">
+      <h2 class="h6 mb-1">{{ user.username_jp }}</h2>
+      <p class="small text-muted mb-3">{{ user.username }} / {{ user.email }}</p>
+      <div class="d-flex flex-wrap gap-2">
+        {% if user.is_active %}
+          <span class="badge text-bg-success">有効</span>
+        {% else %}
+          <span class="badge text-bg-danger">無効</span>
+        {% endif %}
+        {% if user.is_staff %}<span class="badge text-bg-primary">システム管理者</span>{% endif %}
+        <span class="badge text-bg-secondary">登録 {{ user.created_at|date:"Y/m/d" }}</span>
+        <span class="badge text-bg-secondary">最終ログイン {{ user.last_login|date:"Y/m/d H:i"|default:"-" }}</span>
       </div>
     </div>
   </div>
+
+  <section class="mb-4">
+    <h2 class="h5 mb-3">アカウント設定</h2>
+    <div class="d-grid gap-2 d-sm-flex flex-sm-wrap">
+      <a class="btn btn-outline-primary" href="{% url 'custom_auth:edit_profile' %}">
+        <i class="bi bi-person me-1"></i>プロフィール編集
+      </a>
+      <a class="btn btn-outline-primary" href="{% url 'custom_auth:email_change' %}">
+        <i class="bi bi-envelope me-1"></i>メールアドレス変更
+      </a>
+      <a class="btn btn-outline-primary" href="{% url 'custom_auth:password_change' %}">
+        <i class="bi bi-key me-1"></i>パスワード変更
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="h5 mb-2">2段階認証</h2>
+    <p class="text-muted small mb-3">認証アプリを登録すると、ログイン時の確認コードが使えます。</p>
+    <a class="btn btn-outline-secondary" href="{% url 'custom_auth:list_two_auth' %}">
+      <i class="bi bi-shield-lock me-1"></i>2段階認証の設定
+    </a>
+  </section>
 {% endblock content %}

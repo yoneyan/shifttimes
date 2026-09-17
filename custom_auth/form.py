@@ -7,15 +7,15 @@ from custom_auth.models import Group, User, UserGroup
 
 class GroupAddForm(forms.Form):
     agree = forms.ChoiceField(
-        label="1.1. 各規約に同意する", required=True,
+        label="利用規約への同意", required=True,
         choices=((False, "同意しない"), (True, "同意する"))
     )
-    name = forms.CharField(label="2.1. 会社名", max_length=150, required=True)
-    name_jp = forms.CharField(label="2.2.会社名(Japanese)", max_length=150, required=True)
-    postcode = forms.CharField(label="2.3.郵便番号", max_length=10, required=True)
-    address = forms.CharField(label="2.4. 住所", max_length=250, required=True)
-    address_jp = forms.CharField(label="2.5. 住所(Japanese)", max_length=250, required=True)
-    phone = forms.CharField(label="2.6. phone", max_length=30, required=True)
+    name_jp = forms.CharField(label="グループ名", max_length=150, required=True)
+    name = forms.CharField(label="グループ名(English)", max_length=150, required=True)
+    postcode = forms.CharField(label="郵便番号", max_length=10, required=True)
+    address_jp = forms.CharField(label="住所", max_length=250, required=True)
+    address = forms.CharField(label="住所(English)", max_length=250, required=True)
+    phone = forms.CharField(label="電話番号", max_length=30, required=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -38,8 +38,6 @@ class GroupAddForm(forms.Form):
                 address=self.cleaned_data["address"],
                 address_jp=self.cleaned_data["address_jp"],
                 phone=self.cleaned_data["phone"],
-                country=self.cleaned_data["country"],
-                contract_type=self.cleaned_data["contract"],
             )
         except Exception:
             raise ValueError("グループの登録に失敗しました(名前が被っている可能性があります)")
@@ -271,9 +269,10 @@ class SignUpForm(forms.Form):
             raise forms.ValidationError("パスワードが一致しません")
 
     def create_user(self):
-        User.objects.create_user(
+        return User.objects.create_user(
             username=self.cleaned_data["username"],
             username_jp=self.cleaned_data["username_jp"],
+            display_name=self.cleaned_data["display_name"],
             email=self.cleaned_data["email"],
             password=self.cleaned_data["password1"],
         )

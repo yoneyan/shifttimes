@@ -1,43 +1,37 @@
 {% extends 'base.html' %}
+{% block title %}グループ情報 | {% endblock %}
+{% block page_title %}グループ情報{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }} / {{ group.name }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth_group:index' %}">
+    <i class="bi bi-arrow-left me-1"></i>グループ一覧へ戻る
+  </a>
+{% endblock %}
 {% block content %}
-  <div class="container">
-    <div class="row">
-      <div class="container py-4 mb-auto">
-        <div class="h-900 p-2 rounded-3">
-          <h2 class="card-title">Group情報閲覧・修正</h2>
-          <br/>
-          {% if error %}
-            <div class="alert alert-danger" role="alert">
-              {{ error }}
-            </div>
-            <br/>
-          {% endif %}
-          {% if group %}
-            <div class="card">
-              <div class="card-header">
-                ID: {{ group.id }} 作成日: {{ group.created_at }}
-              </div>
-            </div>
-            <br/>
-            <br/>
-            <form method="post" class="h-adr">
-              {% csrf_token %}
-              {{ form }}
-              <br/>
-              {% if group.status == 1 and is_administrator %}
-                <button type="submit" class="btn btn-primary">変更
-                </button>{% endif %}
-            </form>
+  {% if error %}
+    <div class="alert alert-danger py-2" role="alert">{{ error }}</div>
+  {% endif %}
+
+  {% if group %}
+    <div class="card form-narrow">
+      <div class="card-body">
+        <p class="small text-muted mb-3">ID: {{ group.id }} / 作成日 {{ group.created_at|date:"Y/m/d" }}</p>
+        <form method="post" class="h-adr">
+          {% csrf_token %}
+          {% include 'includes/form_fields.html' %}
+          {% if group.status == 1 and is_administrator %}
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-save me-1"></i>変更を保存
+            </button>
           {% else %}
-            <p><b>本グループIDは閲覧できません</b></p>
+            <p class="small text-muted mb-0">変更するにはこのグループの管理者権限が必要です。</p>
           {% endif %}
-          <br/>
-          <br/>
-          <a class="btn btn-primary"
-             href="{% url 'custom_auth_group:index' %}" role="button"
-             aria-expanded="false">グループ一覧に戻る</a>
-        </div>
+        </form>
       </div>
     </div>
-  </div>
+  {% else %}
+    <div class="alert alert-warning" role="alert">このグループは閲覧できません。</div>
+  {% endif %}
 {% endblock content %}

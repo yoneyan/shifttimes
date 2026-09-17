@@ -1,0 +1,135 @@
+[project]
+name = "dsbd"
+version = "0.1.0"
+description = "Shift Times Dashboard App"
+requires-python = ">=3.12"
+dependencies = [
+    "asgiref",
+    "attrs",
+    "autobahn",
+    "automat",
+    "certifi",
+    "cffi",
+    "channels",
+    "charset-normalizer",
+    "constantly",
+    "cryptography",
+    "daphne",
+    "django==5.*",
+    "django-countries",
+    "django-debug-toolbar",
+    "django-qrcode",
+    "django-widget-tweaks",
+    "django-simple-history",
+    "django-tidb~=6.0.0",
+    "djangorestframework",
+    "hyperlink",
+    "idna",
+    "incremental",
+    "markdown",
+    "msal",
+    "mysqlclient",
+    "pillow",
+    "pyasn1",
+    "pyasn1-modules",
+    "pycparser",
+    "pyopenssl",
+    "pyotp",
+    "pypng",
+    "pytz",
+    "qrcode",
+    "requests",
+    "service-identity",
+    "six",
+    "slack-sdk",
+    "sqlparse",
+    "stripe",
+    "twisted",
+    "txaio",
+    "typing-extensions",
+    "urllib3",
+    "uvicorn[standard]",
+    "webauthn",
+    "zope.interface",
+    "types-qrcode>=8.2.0.20260518",
+]
+
+[dependency-groups]
+dev = [
+    "black>=26.5.1",
+    "django-stubs[compatible-mypy]>=6.0.7",
+    "djangorestframework-stubs[compatible-mypy]>=3.17.1",
+    "mypy>=2.3.0",
+    "pre-commit>=4.6.1",
+    "pyrefly>=1.2.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.2",
+    "ruff-lsp>=0.0.62",
+    "ty>=0.0.69",
+]
+
+[tool.uv]
+package = false
+default-groups = "all"
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    "alembic",
+    "*/migrations/*",
+    "static",
+    "node_modules",
+    "dist",
+    "build",
+]
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "F", # pyflakes
+    "I", # isort
+    "C", # flake8-comprehensions
+    "B", # flake8-bugbear
+    "UP", # pyupgrade
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 20
+
+[tool.mypy]
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+
+[tool.django-stubs]
+django_settings_module = "dsbd.settings"

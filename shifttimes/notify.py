@@ -4,11 +4,21 @@ from slack_sdk import WebhookClient
 from shifttimes.utils import get_admin_history_url, get_admin_url
 
 
+def _get_webhook_client():
+    webhook_url = getattr(settings, "SLACK_WEBHOOK_URL_LOG", "")
+    if not webhook_url:
+        return None
+    return WebhookClient(webhook_url)
+
+
 def notify_delete_db(model_name: str, instance):
+    client = _get_webhook_client()
+    if client is None:
+        return
+
     admin_history_url = get_admin_history_url(instance)
 
     message = f"レコードが削除されました:\n{instance}"
-    client = WebhookClient(settings.SLACK_WEBHOOK_URL_LOG)
     client.send(
         attachments=[
             {
@@ -21,6 +31,10 @@ def notify_delete_db(model_name: str, instance):
 
 
 def notify_insert_db(model_name: str, instance):
+    client = _get_webhook_client()
+    if client is None:
+        return
+
     field_details = []
     for field in instance._meta.fields:
         field_name = field.verbose_name
@@ -32,7 +46,6 @@ def notify_insert_db(model_name: str, instance):
 
     detailed_info = "\n".join(field_details)
     message = f"新しいレコードが登録されました:\n{detailed_info}"
-    client = WebhookClient(settings.SLACK_WEBHOOK_URL_LOG)
     client.send(
         attachments=[
             {
@@ -45,6 +58,10 @@ def notify_insert_db(model_name: str, instance):
 
 
 def notify_update_db(model_name: str, instance):
+    client = _get_webhook_client()
+    if client is None:
+        return
+
     admin_url = get_admin_url(instance)
     admin_history_url = get_admin_history_url(instance)
 
@@ -68,7 +85,6 @@ def notify_update_db(model_name: str, instance):
 
     if changes:
         message = f"モデル '{instance}' の以下のフィールドが変更されました:\n" + "\n".join(changes)
-        client = WebhookClient(settings.SLACK_WEBHOOK_URL_LOG)
         client.send(
             attachments=[
                 {
@@ -81,7 +97,10 @@ def notify_update_db(model_name: str, instance):
 
 
 def notice_payment(metadata_type="", event_type="", data=None):
-    client = WebhookClient(settings.SLACK_WEBHOOK_URL_LOG)
+    client = _get_webhook_client()
+    if client is None:
+        return
+
     client.send(
         text="[%s(%s)] %s-%s [%d円(/%s)]"
         % (metadata_type, event_type, data["id"], data["name"], data["plan_amount"], data["plan_interval"]),

@@ -1,42 +1,46 @@
 {% extends 'base.html' %}
+{% block title %}2段階認証デバイス登録 | {% endblock %}
+{% block page_title %}2段階認証デバイス登録{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth:list_two_auth' %}">
+    <i class="bi bi-arrow-left me-1"></i>一覧へ戻る
+  </a>
+{% endblock %}
 {% block content %}
-  <div class="container">
-    <div class="row">
-      <div class="container py-4 mb-auto">
-        <div class="h-900 p-2 rounded-3">
-          <h2 class="card-title">2段階認証デバイス登録</h2>
-          <br/>
-          {% if initial_check %}
-            <img src="data:image/png;base64,{{ qr }}" width="250"/>
-            <br/>
-            <br/>
-            <br/>
-            {% if error %}
-              <div class="alert alert-danger" role="alert">
-                {{ error }}
-              </div>
-            {% endif %}
-            <form method="post">
-              {% csrf_token %}
-              <input type="text" value='{{ secret }}' name="secret"
-                     hidden>
-              <label for="floatingInput">{{ form.title.label }}</label>
-              {{ form.title }}
-              <label for="id_password">{{ form.code.label }}</label>
-              {{ form.code }}
-              <br/>
-              <br/>
-              <button type="submit" name="id" value="submit"
-                      class="btn btn-primary">登録
-              </button>
-            </form>
-          {% else %}
-            <div class="alert alert-danger" role="alert">
-              登録数が上限を超えてます。
-            </div>
-          {% endif %}
+  {% if initial_check %}
+    <div class="card form-narrow">
+      <div class="card-body">
+        <p class="small text-muted">認証アプリで下のQRコードを読み取り、表示された6桁のコードを入力してください。</p>
+        <div class="text-center mb-3">
+          <img src="data:image/svg+xml;base64,{{ qr }}" width="220" height="220" alt="2段階認証用QRコード"
+               class="border rounded p-2">
         </div>
+
+        {% if error %}
+          <div class="alert alert-danger py-2" role="alert">{{ error }}</div>
+        {% endif %}
+
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" value="{{ secret }}" name="secret">
+          <div class="mb-3">
+            <label class="form-label fw-bold" for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>
+            {{ form.title }}
+            <div class="form-text">例: iPhoneの認証アプリ</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-bold" for="{{ form.code.id_for_label }}">{{ form.code.label }}</label>
+            {{ form.code }}
+          </div>
+          <button type="submit" name="id" value="submit" class="btn btn-primary">
+            <i class="bi bi-shield-check me-1"></i>登録
+          </button>
+        </form>
       </div>
     </div>
-  </div>
+  {% else %}
+    <div class="alert alert-warning" role="alert">
+      登録できるデバイス数の上限に達しています。
+    </div>
+  {% endif %}
 {% endblock content %}

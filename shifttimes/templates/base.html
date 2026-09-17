@@ -1,60 +1,357 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <meta name="description" content="">
-    <meta name="author" content="Mark Otto, Jacob Thornton, and Bootstrap contributors">
-    <meta name="generator" content="Jekyll v3.8.5">
-    <title>シフト管理システム</title>
-
-    <link rel="canonical" href="https://getbootstrap.com/docs/4.2/examples/starter-template/">
+    <meta name="description" content="シフトの登録・共有・集計をまとめて行えるシフト管理システム">
+    <title>{% block title %}{% endblock %}シフト管理システム</title>
 
     <!-- Bootstrap core CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0/dist/css/bootstrap.min.css" rel="stylesheet"
           integrity="sha384-gH2yIJqKdNHPEq0n4Mqa/HGKIhSkIHeL5AyhkYV8i59U5AR6csBvApHHNl/vI1Bx" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.9.1/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <style>
         body {
             padding-top: 5rem;
+        }
+
+        .shift-choice-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .35rem;
+        }
+
+        .shift-choice-group .btn {
+            align-items: center;
+            border-radius: .375rem !important;
+            display: inline-flex;
+            justify-content: center;
+            min-height: 2.35rem;
+            white-space: nowrap;
+        }
+
+        .shift-choice-group-sm .btn {
+            min-height: 2.05rem;
+            padding: .25rem .55rem;
+        }
+
+        .shift-choice-group-compact.shift-choice-group .btn {
+            flex: 0 0 auto !important;
+            min-width: 2.4rem;
+            padding: .25rem .3rem;
+            font-weight: 700;
+        }
+
+        .shift-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .6rem;
+            font-size: .8rem;
+            align-items: center;
+        }
+
+        .shift-legend-item {
+            display: flex;
+            align-items: center;
+            gap: .3rem;
+        }
+
+        .shift-legend-dot {
+            width: .8rem;
+            height: .8rem;
+            border-radius: .15rem;
+            flex-shrink: 0;
+        }
+
+        .shift-schedule-choice-cell {
+            min-width: 280px;
+        }
+
+        .shift-sticky-col {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            background-color: #fff;
+        }
+
+        thead .shift-sticky-col {
+            z-index: 2;
+            background-color: #f8f9fa;
+        }
+
+        /* ===== 共通ページレイアウト ===== */
+        html, body {
+            min-height: 100%;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+        }
+
+        main {
+            flex: 1 0 auto;
+        }
+
+        .page-header {
+            align-items: flex-start;
+            display: flex;
+            flex-wrap: wrap;
+            gap: .75rem;
+            justify-content: space-between;
+            margin-bottom: 1.25rem;
+        }
+
+        .page-header-text {
+            min-width: 0;
+        }
+
+        .page-header:empty, .page-header .page-actions:empty {
+            display: none;
+        }
+
+        .page-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .5rem;
+        }
+
+        /* 入力フォーム主体のページは読みやすい幅に抑える */
+        .form-narrow {
+            max-width: 32rem;
+        }
+
+        @media (max-width: 575.98px) {
+            .page-actions {
+                display: grid;
+                gap: .5rem;
+                width: 100%;
+            }
+        }
+
+        /* ===== 月カレンダー（Bootstrap のトークンに寄せた自前グリッド） ===== */
+        .cal {
+            border: 1px solid var(--bs-border-color);
+            border-radius: var(--bs-border-radius);
+            overflow: hidden;
+        }
+
+        .cal-head, .cal-week {
+            display: grid;
+            /* minmax(0,1fr) にしないと、チップの最小幅で列がはみ出す */
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+        }
+
+        .cal-head > div {
+            background: var(--bs-tertiary-bg, #f8f9fa);
+            border-bottom: 1px solid var(--bs-border-color);
+            font-size: .78rem;
+            font-weight: 600;
+            padding: .4rem 0;
+            text-align: center;
+        }
+
+        .cal-head .cal-sun { color: var(--bs-danger); }
+        .cal-head .cal-sat { color: var(--bs-primary); }
+
+        .cal-day {
+            background: var(--bs-body-bg);
+            border-bottom: 1px solid var(--bs-border-color);
+            border-right: 1px solid var(--bs-border-color);
+            display: flex;
+            flex-direction: column;
+            gap: .15rem;
+            min-height: 6.5rem;
+            padding: .3rem;
+            position: relative;
+            text-decoration: none;
+        }
+
+        .cal-week > .cal-day:nth-child(7n) { border-right: 0; }
+        .cal-week:last-child > .cal-day { border-bottom: 0; }
+
+        a.cal-day:hover { background: var(--bs-primary-bg-subtle, #cfe2ff); }
+
+        .cal-day-empty { background: var(--bs-secondary-bg, #f8f9fa); }
+        .cal-day-past { background: var(--bs-tertiary-bg, #f8f9fa); }
+        .cal-day-blocked { background: var(--bs-danger-bg-subtle, #f8d7da); }
+
+        .cal-day-num {
+            align-items: center;
+            border-radius: 50%;
+            color: var(--bs-body-color);
+            display: inline-flex;
+            font-size: .82rem;
+            font-weight: 700;
+            height: 1.5rem;
+            justify-content: center;
+            width: 1.5rem;
+        }
+
+        .cal-day-sun .cal-day-num { color: var(--bs-danger); }
+        .cal-day-sat .cal-day-num { color: var(--bs-primary); }
+
+        .cal-day-today .cal-day-num {
+            background: var(--bs-primary);
+            color: #fff;
+        }
+
+        .cal-chips {
+            display: flex;
+            flex-direction: column;
+            gap: .1rem;
+            min-width: 0;
+        }
+
+        .cal-chip {
+            align-items: center;
+            border-radius: var(--bs-border-radius-sm);
+            color: #fff;
+            display: flex;
+            font-size: .7rem;
+            font-weight: 700;
+            gap: .2rem;
+            line-height: 1.5;
+            overflow: hidden;
+            padding: 0 .25rem;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .cal-chip-draft { opacity: .65; }
+
+        .cal-badge {
+            align-self: flex-start;
+            border-radius: var(--bs-border-radius-sm);
+            color: #fff;
+            font-size: .65rem;
+            font-weight: 700;
+            line-height: 1.5;
+            max-width: 100%;
+            overflow: hidden;
+            padding: 0 .3rem;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 767.98px) {
+            .cal-day { min-height: 4.6rem; padding: .2rem; gap: .1rem; }
+            .cal-day-num { font-size: .75rem; height: 1.3rem; width: 1.3rem; }
+            .cal-chip { font-size: .62rem; padding: 0 .15rem; }
+            .cal-badge { font-size: .58rem; padding: 0 .2rem; }
+            .cal-head > div { font-size: .7rem; }
+        }
+
+        /* 幅が足りない端末では時刻を省き、記号だけを並べる */
+        @media (max-width: 575.98px) {
+            .cal-chips { flex-direction: row; flex-wrap: wrap; }
+            .cal-chip-label { display: none; }
+            .cal-chip { font-size: .72rem; justify-content: center; min-width: 1.1rem; padding: 0 .1rem; }
+        }
+
+        /* スマホでの操作性（タップ領域・iOSの自動ズーム防止・下部固定バー） */
+        .shift-sticky-actions {
+            background: #fff;
+            border-top: 1px solid #dee2e6;
+            bottom: 0;
+            box-shadow: 0 -2px 8px rgba(0, 0, 0, .06);
+            left: 0;
+            padding: .6rem .75rem calc(.6rem + env(safe-area-inset-bottom));
+            position: sticky;
+            right: 0;
+            z-index: 1020;
+        }
+
+        @media (max-width: 991.98px) {
+            body {
+                padding-top: 4.25rem;
+            }
+
+            main.container-fluid {
+                padding-left: .75rem;
+                padding-right: .75rem;
+            }
+
+            .btn {
+                align-items: center;
+                display: inline-flex;
+                justify-content: center;
+                min-height: 44px;
+            }
+
+            .btn-sm {
+                min-height: 40px;
+            }
+
+            .form-control, .form-select {
+                font-size: 1rem;
+                min-height: 46px;
+            }
+
+            .shift-choice-group .btn {
+                flex: 1 1 0;
+                min-height: 52px;
+                font-size: 1.15rem;
+            }
+
+            .shift-choice-group-compact.shift-choice-group .btn {
+                min-height: 44px;
+            }
+
+            .shift-schedule-choice-cell {
+                min-width: 260px;
+            }
+
+            .card-body {
+                padding: .85rem;
+            }
         }
     </style>
     {% block extrahead %}{% endblock %}
 </head>
 <body>
-<nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top">
-    <a class="navbar-brand" href="{% url 'index' %}">　シフト管理</a>
-    <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarsExampleDefault"
-            aria-controls="navbarsExampleDefault" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-    </button>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="{% url 'index' %}">シフト管理</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar"
+                aria-controls="mainNavbar" aria-expanded="false" aria-label="メニューを開く">
+            <span class="navbar-toggler-icon"></span>
+        </button>
 
-    <div class="collapse navbar-collapse" id="navbarsExampleDefault">
-        <ul class="navbar-nav mr-auto">
-            {% include 'navbar.html' %}
-        </ul>
+        <div class="collapse navbar-collapse" id="mainNavbar">
+            <ul class="navbar-nav me-auto">
+                {% include 'navbar.html' %}
+            </ul>
+        </div>
     </div>
 </nav>
 
-<main role="main" class="container">
+<main role="main" class="container py-4">
+    {% block page_header %}
+        <div class="page-header">
+            <div class="page-header-text">
+                <h1 class="h4 mb-1">{% block page_title %}{% endblock %}</h1>
+                {% block page_subtitle %}{% endblock %}
+            </div>
+            <div class="page-actions">{% block page_actions %}{% endblock %}</div>
+        </div>
+    {% endblock page_header %}
+
+    {% include 'includes/messages.html' %}
+
     {% block content %}
     {% endblock content %}
-</main><!-- /.container -->
-<script src="https://code.jquery.com/jquery-3.6.3.js" integrity="sha256-nQLuAZGRRcILA+6dMBOvcRh5Pe310sBpanc6+QBmyVM="
-        crossorigin="anonymous"></script>
+</main>
+
+<footer class="border-top mt-auto py-3">
+    <div class="container text-center text-muted small">
+        シフト管理システム
+    </div>
+</footer>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0/dist/js/bootstrap.bundle.min.js"
         integrity="sha384-A3rJD856KowSb7dwlZdYEkO39Gagi7vIsF0jrRAoQmDKKtQBHUuLZ9AsSv4jD4Xa"
         crossorigin="anonymous"></script>
 </body>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.27.0/moment.min.js"
-        integrity="sha512-rmZcZsyhe0/MAjquhTgiUcb4d9knaFc7b5xAfju483gbEXTkeJRUMIPk6s3ySZMYUHEcjKbjLjyddGWMrNEvZg=="
-        crossorigin="anonymous"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.27.0/locale/ja.min.js"
-        integrity="sha512-rElveAU5iG1CzHqi7KbG1T4DQIUCqhitISZ9nqJ2Z4TP0z4Aba64xYhwcBhHQMddRq27/OKbzEFZLOJarNStLg=="
-        crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-<script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.5/index.global.min.js'></script>
 
 {% block javascript %}
 {% endblock javascript %}
