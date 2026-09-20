@@ -43,6 +43,7 @@ class ShiftViewTests(TestCase):
         UserGroup.objects.create(user=self.user, group=self.group)
         UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
         self.time_slot = TimeSlot.objects.create(
+            group=self.group,
             name="早番",
             start_time=time(9, 0),
             end_time=time(13, 0),
@@ -593,6 +594,195 @@ class ShiftViewTests(TestCase):
             if row["member"].id == user.id:
                 return row
         raise AssertionError("member_rows に %s がいません" % user.username)
+
+
+class TimeSlotSettingsTests(TestCase):
+    """シフト・スケジュール設定の勤務時間（時間帯）設定"""
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.member = user_model.objects.create(
+            username="member", username_jp="メンバー", email="member@example.com", is_active=True,
+        )
+        self.admin_user = user_model.objects.create(
+            username="slot-admin", username_jp="管理者", email="slot-admin@example.com", is_active=True,
+        )
+        self.group = Group.objects.create(name="shop", name_jp="店舗")
+        self.other_group = Group.objects.create(name="other-shop", name_jp="別店舗")
+        UserGroup.objects.create(user=self.member, group=self.group)
+        UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
+        self.settings_url = reverse("shift:schedule_settings", args=[self.group.id])
+
+    def _post_time_slot(self, **overrides):
+        data = {
+            "action": "time_slot",
+            "name": "早番",
+            "start_time": "09:00",
+            "end_time": "13:00",
+            "is_active": "on",
+        }
+        data.update(overrides)
+        return self.client.post(self.settings_url, data)
+
+    def test_settings_page_creates_default_time_slots(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.settings_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(TimeSlot.objects.filter(group=self.group).count(), 3)
+        self.assertEqual(
+            [row["time_slot"].name for row in response.context["time_slot_rows"]],
+            ["早番", "中番", "遅番"],
+        )
+
+    def test_admin_can_add_time_slot(self):
+        self.client.force_login(self.admin_user)
+        TimeSlot.objects.filter(group=self.group).delete()
+
+        response = self._post_time_slot(name="夜番", start_time="18:00", end_time="22:00")
+
+        self.assertRedirects(response, self.settings_url)
+        time_slot = TimeSlot.objects.get(group=self.group, name="夜番")
+        self.assertEqual(time_slot.start_time, time(18, 0))
+        self.assertEqual(time_slot.end_time, time(22, 0))
+        self.assertTrue(time_slot.is_active)
+
+    def test_admin_can_edit_and_disable_time_slot(self):
+        time_slot = TimeSlot.objects.create(
+            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+        )
+        self.client.force_login(self.admin_user)
+
+        response = self._post_time_slot(
+            time_slot_id=time_slot.id, name="午前", start_time="10:00", end_time="14:00", is_active="",
+        )
+
+        self.assertRedirects(response, self.settings_url)
+        time_slot.refresh_from_db()
+        self.assertEqual(time_slot.name, "午前")
+        self.assertEqual(time_slot.start_time, time(10, 0))
+        self.assertFalse(time_slot.is_active)
+
+    def test_duplicate_name_in_same_group_is_rejected(self):
+        TimeSlot.objects.create(
+            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+        )
+        self.client.force_login(self.admin_user)
+
+        self._post_time_slot(name="早番", start_time="07:00", end_time="11:00")
+
+        self.assertEqual(TimeSlot.objects.filter(group=self.group, name="早番").count(), 1)
+        self.assertEqual(TimeSlot.objects.get(group=self.group, name="早番").start_time, time(9, 0))
+
+    def test_end_time_must_be_after_start_time(self):
+        self.client.force_login(self.admin_user)
+        TimeSlot.objects.filter(group=self.group).delete()
+
+        self._post_time_slot(name="深夜", start_time="22:00", end_time="06:00")
+
+        self.assertFalse(TimeSlot.objects.filter(group=self.group, name="深夜").exists())
+
+    def test_member_cannot_change_time_slots(self):
+        self.client.force_login(self.member)
+
+        response = self._post_time_slot(name="勝手に追加")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(TimeSlot.objects.filter(name="勝手に追加").exists())
+
+    def test_unused_time_slot_can_be_deleted(self):
+        time_slot = TimeSlot.objects.create(
+            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+        )
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse("shift:time_slot_delete", args=[self.group.id, time_slot.id])
+        )
+
+        self.assertRedirects(response, self.settings_url)
+        self.assertFalse(TimeSlot.objects.filter(id=time_slot.id).exists())
+
+    def test_used_time_slot_is_kept_and_can_only_be_disabled(self):
+        time_slot = TimeSlot.objects.create(
+            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+        )
+        ShiftEntry.objects.create(
+            group=self.group,
+            user=self.member,
+            work_date=date(2026, 6, 1),
+            time_slot=time_slot,
+            status=ShiftEntry.AVAILABLE,
+        )
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse("shift:time_slot_delete", args=[self.group.id, time_slot.id])
+        )
+
+        self.assertRedirects(response, self.settings_url)
+        self.assertTrue(TimeSlot.objects.filter(id=time_slot.id).exists())
+
+        rows = self.client.get(self.settings_url).context["time_slot_rows"]
+        used_row = next(row for row in rows if row["time_slot"].id == time_slot.id)
+        self.assertEqual(used_row["entry_count"], 1)
+        self.assertFalse(used_row["can_delete"])
+
+    def test_time_slot_of_other_group_is_not_editable(self):
+        other_slot = TimeSlot.objects.create(
+            group=self.other_group, name="他店の早番", start_time=time(9, 0), end_time=time(13, 0),
+        )
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse("shift:time_slot_delete", args=[self.group.id, other_slot.id])
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(TimeSlot.objects.filter(id=other_slot.id).exists())
+
+    def test_summary_keeps_disabled_time_slot_with_submitted_entries(self):
+        """無効にした勤務時間でも、提出済みの希望が残っていれば集計に表示する"""
+        time_slot = TimeSlot.objects.create(
+            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+        )
+        ShiftEntry.objects.create(
+            group=self.group,
+            user=self.member,
+            work_date=date(2026, 6, 1),
+            time_slot=time_slot,
+            status=ShiftEntry.AVAILABLE,
+        )
+        time_slot.is_active = False
+        time_slot.save(update_fields=["is_active"])
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(
+            reverse("shift:summary", args=[self.group.id]),
+            {"from": "2026-06-01", "days": "1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("早番", [slot.name for slot in response.context["time_slots"]])
+
+    def test_entry_table_shows_only_own_group_time_slots(self):
+        TimeSlot.objects.create(
+            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+        )
+        TimeSlot.objects.create(
+            group=self.other_group, name="他店の早番", start_time=time(9, 0), end_time=time(13, 0),
+        )
+        TimeSlot.objects.create(
+            group=self.group, name="無効な時間帯", start_time=time(20, 0), end_time=time(22, 0),
+            is_active=False,
+        )
+        self.client.force_login(self.member)
+
+        response = self.client.get(reverse("shift:entry_table", args=[self.group.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([slot.name for slot in response.context["time_slots"]], ["早番"])
 
 
 class AttendanceTests(TestCase):

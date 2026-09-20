@@ -21,12 +21,14 @@
 
     .schedule-table tbody tr.schedule-row,
     .schedule-table tbody tr.schedule-type-row,
+    .schedule-table tbody tr.time-slot-row,
     .schedule-table tbody tr.deadline-row {
       cursor: pointer;
     }
 
     .schedule-table tbody tr.schedule-row:hover td,
     .schedule-table tbody tr.schedule-type-row:hover td,
+    .schedule-table tbody tr.time-slot-row:hover td,
     .schedule-table tbody tr.deadline-row:hover td {
       background: #e7f1ff;
     }
@@ -92,6 +94,59 @@
   </a>
 {% endblock %}
 {% block content %}
+
+  <section class="mb-5">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+      <h2 class="h5 mb-0">勤務時間</h2>
+      <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal"
+              data-bs-target="#timeSlotModal" data-mode="add">
+        <i class="bi bi-plus-lg me-1"></i>追加
+      </button>
+    </div>
+    <p class="text-muted small mb-2">
+      シフト希望の入力に使う時間帯です。行をタップすると名前や時刻を変更できます。
+      シフト希望が登録済みの勤務時間は、削除ではなく無効にしてください。
+    </p>
+
+    <div class="table-responsive mb-4">
+      <table class="schedule-table">
+        <thead>
+        <tr>
+          <th scope="col">時間帯名</th>
+          <th scope="col">時間</th>
+          <th scope="col">状態</th>
+          <th scope="col">登録済みの希望</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for row in time_slot_rows %}
+          <tr class="time-slot-row"
+              data-id="{{ row.time_slot.id }}"
+              data-name="{{ row.time_slot.name }}"
+              data-start="{{ row.time_slot.start_time|time:'H:i' }}"
+              data-end="{{ row.time_slot.end_time|time:'H:i' }}"
+              data-active="{% if row.time_slot.is_active %}1{% endif %}"
+              data-delete-url="{% if row.can_delete %}{{ row.delete_url }}{% endif %}">
+            <td>{{ row.time_slot.name }}</td>
+            <td>{{ row.time_slot.start_time|time:'H:i' }}〜{{ row.time_slot.end_time|time:'H:i' }}</td>
+            <td>
+              {% if row.time_slot.is_active %}
+                <span class="badge text-bg-primary">有効</span>
+              {% else %}
+                <span class="badge text-bg-secondary">無効</span>
+              {% endif %}
+            </td>
+            <td>{{ row.entry_count }}件</td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="4" class="text-muted py-4">勤務時間が登録されていません。</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 
   <section class="mb-5">
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
@@ -192,6 +247,59 @@
       </table>
     </div>
   </section>
+
+  {# ===== 勤務時間ダイアログ ===== #}
+  <div class="modal fade" id="timeSlotModal" tabindex="-1" aria-labelledby="timeSlotModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="time_slot">
+          <input type="hidden" name="time_slot_id" id="timeSlotId" value="">
+          <div class="modal-header">
+            <h5 class="modal-title" id="timeSlotModalLabel">勤務時間</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label small fw-bold" for="timeSlotName">時間帯名</label>
+              <input type="text" class="form-control" id="timeSlotName" name="name" maxlength="100"
+                     placeholder="例: 早番、14:00-16:00" required>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label small fw-bold" for="timeSlotStart">開始時刻</label>
+                <input type="time" class="form-control" id="timeSlotStart" name="start_time" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold" for="timeSlotEnd">終了時刻</label>
+                <input type="time" class="form-control" id="timeSlotEnd" name="end_time" required>
+              </div>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="timeSlotActive" name="is_active" checked>
+              <label class="form-check-label" for="timeSlotActive">有効にする（シフト希望の入力に表示する）</label>
+            </div>
+            <div class="form-text" id="timeSlotUsedHint">
+              シフト希望が登録されている勤務時間は削除できません。無効にすると新しい入力には表示されなくなります。
+            </div>
+          </div>
+          <div class="modal-footer justify-content-between">
+            <button type="submit" class="btn btn-outline-danger d-none" id="timeSlotDelete" formnovalidate
+                    onclick="return confirm('この勤務時間を削除しますか？');">
+              <i class="bi bi-trash me-1"></i>削除
+            </button>
+            <div class="d-flex gap-2 ms-auto">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg me-1"></i>登録
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 
   {# ===== 提出期限ダイアログ ===== #}
   <div class="modal fade" id="deadlineModal" tabindex="-1" aria-labelledby="deadlineModalLabel" aria-hidden="true">
@@ -460,6 +568,44 @@
         weekdaySelect.addEventListener("change", showDays);
         showDays();
       }
+
+      // 勤務時間
+      const timeSlotModalEl = document.getElementById("timeSlotModal");
+      const timeSlotModal = new bootstrap.Modal(timeSlotModalEl);
+      const timeSlotDeleteBtn = document.getElementById("timeSlotDelete");
+      const fillTimeSlotModal = function (data) {
+        document.getElementById("timeSlotId").value = data.id || "";
+        document.getElementById("timeSlotName").value = data.name || "";
+        document.getElementById("timeSlotStart").value = data.start || "";
+        document.getElementById("timeSlotEnd").value = data.end || "";
+        document.getElementById("timeSlotActive").checked = data.id ? Boolean(data.active) : true;
+        document.getElementById("timeSlotModalLabel").textContent = data.id ? "勤務時間の編集" : "勤務時間の追加";
+        if (data.deleteUrl) {
+          timeSlotDeleteBtn.setAttribute("formaction", data.deleteUrl);
+          timeSlotDeleteBtn.classList.remove("d-none");
+        } else {
+          timeSlotDeleteBtn.removeAttribute("formaction");
+          timeSlotDeleteBtn.classList.add("d-none");
+        }
+      };
+      document.querySelectorAll("tr.time-slot-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+          fillTimeSlotModal({
+            id: row.dataset.id,
+            name: row.dataset.name,
+            start: row.dataset.start,
+            end: row.dataset.end,
+            active: row.dataset.active,
+            deleteUrl: row.dataset.deleteUrl,
+          });
+          timeSlotModal.show();
+        });
+      });
+      timeSlotModalEl.addEventListener("show.bs.modal", function (event) {
+        if (event.relatedTarget && event.relatedTarget.dataset.mode === "add") {
+          fillTimeSlotModal({});
+        }
+      });
 
       // 開講区分
       const typeModalEl = document.getElementById("scheduleTypeModal");

@@ -7,6 +7,7 @@ from shift.models import (
     OpeningScheduleType,
     ShiftDeadline,
     ShiftEntry,
+    TimeSlot,
     WEEKDAY_CHOICES,
 )
 
@@ -30,6 +31,44 @@ class ShiftDeadlineForm(forms.ModelForm):
         period_end = cleaned_data.get("period_end")
         if period_start and period_end and period_end < period_start:
             raise forms.ValidationError("対象期間の終了日は開始日以降にしてください。")
+        return cleaned_data
+
+
+class TimeSlotForm(forms.ModelForm):
+    """グループごとの勤務時間（時間帯）"""
+
+    class Meta:
+        model = TimeSlot
+        fields = ("name", "start_time", "end_time", "is_active")
+        widgets = {
+            "name": forms.TextInput(attrs={"class": "form-control", "placeholder": "例: 早番、14:00-16:00"}),
+            "start_time": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
+            "end_time": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
+            "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        }
+
+    def __init__(self, *args, group=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.group = group
+
+    def clean_name(self):
+        name = self.cleaned_data["name"]
+        if self.group is None:
+            return name
+
+        time_slots = TimeSlot.objects.filter(group=self.group, name=name)
+        if self.instance.pk:
+            time_slots = time_slots.exclude(pk=self.instance.pk)
+        if time_slots.exists():
+            raise forms.ValidationError("同じ名前の勤務時間がすでにあります。")
+        return name
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_time = cleaned_data.get("start_time")
+        end_time = cleaned_data.get("end_time")
+        if start_time and end_time and end_time <= start_time:
+            raise forms.ValidationError("終了時刻は開始時刻より後にしてください。")
         return cleaned_data
 
 

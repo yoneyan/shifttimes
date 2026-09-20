@@ -1,11 +1,12 @@
 import json
 import calendar as cal_module
-from datetime import date as date_type, timedelta
+from datetime import date as date_type, time as time_type, timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -15,6 +16,7 @@ from custom_auth.models import Group, UserGroup
 from shift.forms import (
     OpeningScheduleTypeForm,
     ShiftDeadlineForm,
+    TimeSlotForm,
 )
 from shift.models import (
     AttendanceSetting,
@@ -79,8 +81,34 @@ def _get_group_for_user(request, group_id, require_admin=False):
     return group
 
 
-def _active_time_slots():
-    return list(TimeSlot.objects.filter(is_active=True).order_by("start_time"))
+# 勤務時間が1つも登録されていないグループでもシフト希望を入力できるようにする初期値
+_DEFAULT_TIME_SLOTS = (
+    ("早番", time_type(9, 0), time_type(13, 0)),
+    ("中番", time_type(13, 0), time_type(17, 0)),
+    ("遅番", time_type(17, 0), time_type(21, 0)),
+)
+
+
+def _ensure_default_time_slots(group):
+    """勤務時間が未登録のグループに既定の勤務時間を作成する"""
+    if TimeSlot.objects.filter(group=group).exists():
+        return
+    for name, start_time, end_time in _DEFAULT_TIME_SLOTS:
+        TimeSlot.objects.get_or_create(
+            group=group,
+            name=name,
+            defaults={"start_time": start_time, "end_time": end_time},
+        )
+
+
+def _active_time_slots(group):
+    """グループの有効な勤務時間。1件も登録がなければ既定の勤務時間を用意する"""
+    time_slots = list(TimeSlot.objects.filter(group=group, is_active=True).order_by("start_time"))
+    if time_slots:
+        return time_slots
+
+    _ensure_default_time_slots(group)
+    return list(TimeSlot.objects.filter(group=group, is_active=True).order_by("start_time"))
 
 
 def _date_range(date_from, date_to):
@@ -339,7 +367,7 @@ def shift_calendar(request, group_id):
     month_from, month_to = _month_bounds(current_month)
     month_dates = list(_date_range(month_from, month_to))
 
-    time_slots = _active_time_slots()
+    time_slots = _active_time_slots(group)
     schedule_map = _opening_schedule_map(group, month_dates)
     entries_by_date = {}
     for entry in (
@@ -562,7 +590,7 @@ def entry_table(request, group_id):
     """月ごとの一覧表。日付をタップしてその日（または曜日一括）の希望をまとめて登録する"""
     group = _get_group_for_user(request, group_id)
     open_period = _shift_entry_period(group)
-    time_slots = _active_time_slots()
+    time_slots = _active_time_slots(group)
 
     if request.method == "POST":
         return _save_entry_table(request, group, open_period, time_slots)
@@ -770,6 +798,7 @@ def schedule_settings(request, group_id):
     """管理者向けの開講スケジュール設定"""
     group = _get_group_for_user(request, group_id, require_admin=True)
     _ensure_default_opening_schedule_types(group)
+    _ensure_default_time_slots(group)
 
     today = _today()
     action = request.POST.get("action", "")
@@ -778,6 +807,20 @@ def schedule_settings(request, group_id):
     month_from, month_to = _month_bounds(current_month)
     month_dates = list(_date_range(month_from, month_to))
     next_month_start, next_month_end = _next_month_range(today)
+
+    if request.method == "POST" and action == "time_slot":
+        time_slot = TimeSlot.objects.filter(
+            group=group, id=request.POST.get("time_slot_id", "") or 0,
+        ).first()
+        time_slot_form = TimeSlotForm(request.POST, instance=time_slot, group=group)
+        if time_slot_form.is_valid():
+            saved_time_slot = time_slot_form.save(commit=False)
+            saved_time_slot.group = group
+            saved_time_slot.save()
+            messages.success(request, "勤務時間「%s」を保存しました。" % saved_time_slot.name)
+        else:
+            messages.error(request, "勤務時間を保存できませんでした。%s" % time_slot_form.errors.as_text())
+        return redirect("shift:schedule_settings", group_id=group.id)
 
     if request.method == "POST" and action == "schedule_type":
         schedule_type = OpeningScheduleType.objects.filter(
@@ -848,6 +891,24 @@ def schedule_settings(request, group_id):
             messages.error(request, "提出期限を保存できませんでした。%s" % deadline_form.errors.as_text())
         return redirect("shift:schedule_settings", group_id=group.id)
 
+    time_slots = TimeSlot.objects.filter(group=group).order_by("start_time", "name")
+    # シフト希望が1件でも登録されている勤務時間は、過去の集計が崩れないように削除させない
+    entry_counts = dict(
+        ShiftEntry.objects.filter(time_slot__group=group)
+        .values("time_slot")
+        .annotate(entry_count=Count("id"))
+        .values_list("time_slot", "entry_count")
+    )
+    time_slot_rows = [
+        {
+            "time_slot": time_slot,
+            "entry_count": entry_counts.get(time_slot.id, 0),
+            "can_delete": entry_counts.get(time_slot.id, 0) == 0,
+            "delete_url": reverse("shift:time_slot_delete", args=[group.id, time_slot.id]),
+        }
+        for time_slot in time_slots
+    ]
+
     schedule_types = OpeningScheduleType.objects.filter(group=group).order_by("display_order", "name")
     schedule_type_rows = [
         {
@@ -891,6 +952,7 @@ def schedule_settings(request, group_id):
 
     return render(request, "shift/schedule_settings.html", {
         "group": group,
+        "time_slot_rows": time_slot_rows,
         "schedule_types": schedule_types,
         "schedule_type_rows": schedule_type_rows,
         "schedule_type_options": schedule_type_options,
@@ -907,6 +969,27 @@ def schedule_settings(request, group_id):
         "open_period": open_period,
         "calendar_url": reverse("shift:schedule", args=[group.id]),
     })
+
+
+@login_required
+def time_slot_delete(request, group_id, time_slot_id):
+    """勤務時間を削除する（シフト希望が登録済みのものは無効化のみ）"""
+    group = _get_group_for_user(request, group_id, require_admin=True)
+    time_slot = get_object_or_404(TimeSlot, id=time_slot_id, group=group)
+
+    if request.method != "POST":
+        raise PermissionDenied
+
+    if ShiftEntry.objects.filter(time_slot=time_slot).exists():
+        messages.error(
+            request,
+            "勤務時間「%s」はシフト希望が登録されているため削除できません。無効にしてください。" % time_slot.name,
+        )
+        return redirect("shift:schedule_settings", group_id=group.id)
+
+    time_slot.delete()
+    messages.success(request, "勤務時間「%s」を削除しました。" % time_slot.name)
+    return redirect("shift:schedule_settings", group_id=group.id)
 
 
 @login_required
@@ -955,7 +1038,21 @@ def summary(request, group_id):
         ),
         key=lambda user: (user.get_display_name(), user.username),
     )
-    time_slots = list(TimeSlot.objects.filter(is_active=True).order_by("start_time"))
+    time_slots = _active_time_slots(group)
+    # 無効にした勤務時間でも、対象期間に提出済みの希望が残っていれば集計に含める
+    inactive_time_slots = list(
+        TimeSlot.objects.filter(
+            group=group,
+            is_active=False,
+            shift_entries__work_date__gte=date_from,
+            shift_entries__work_date__lte=date_to,
+            shift_entries__is_draft=False,
+        ).distinct()
+    )
+    if inactive_time_slots:
+        time_slots = sorted(
+            time_slots + inactive_time_slots, key=lambda slot: (slot.start_time, slot.name),
+        )
 
     # 下書きは「未提出」なので提出状況には含めない
     entries = ShiftEntry.objects.filter(

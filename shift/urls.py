@@ -14,6 +14,8 @@ urlpatterns = [
     path("schedule/<int:group_id>/settings/", views.schedule_settings, name="schedule_settings"),
     path("schedule/<int:group_id>/deadlines/<int:deadline_id>/delete/", views.deadline_delete,
          name="deadline_delete"),
+    path("schedule/<int:group_id>/time-slots/<int:time_slot_id>/delete/", views.time_slot_delete,
+         name="time_slot_delete"),
     path("summary/", views.summary_index, name="summary_index"),
     path("summary/<int:group_id>/", views.summary, name="summary"),
     path("attendance/", attendance_views.attendance_index, name="attendance_index"),

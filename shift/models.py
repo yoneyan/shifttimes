@@ -19,7 +19,7 @@ WEEKDAY_CHOICES = (
 
 
 class TimeSlot(models.Model):
-    """管理者が作成する時間帯マスタ"""
+    """グループごとに管理者が作成する勤務時間（時間帯）マスタ"""
 
     class Meta:
         ordering = ("start_time",)
@@ -28,10 +28,19 @@ class TimeSlot(models.Model):
                 check=models.Q(start_time__lt=models.F("end_time")),
                 name="time_slot_start_before_end",
             ),
+            models.UniqueConstraint(
+                fields=("group", "name"),
+                name="time_slot_unique_name",
+            ),
         ]
-        verbose_name = "時間帯"
-        verbose_name_plural = "時間帯"
+        indexes = [
+            models.Index(fields=("group", "start_time")),
+        ]
+        verbose_name = "勤務時間"
+        verbose_name_plural = "勤務時間"
 
+    group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE, related_name="time_slots",
+                              verbose_name="グループ")
     name = models.CharField("時間帯名", max_length=100)
     start_time = models.TimeField("開始時刻")
     end_time = models.TimeField("終了時刻")

@@ -15,12 +15,12 @@ from shift.models import (
 @admin.register(TimeSlot)
 class TimeSlotAdmin(SimpleHistoryAdmin):
     fieldsets = (
-        (None, {"fields": ("name", "start_time", "end_time", "is_active")}),
+        (None, {"fields": ("group", "name", "start_time", "end_time", "is_active")}),
     )
-    list_display = ("id", "name", "start_time", "end_time", "is_active", "updated_at")
-    list_filter = ("is_active",)
-    search_fields = ("name",)
-    ordering = ("start_time",)
+    list_display = ("id", "group", "name", "start_time", "end_time", "is_active", "updated_at")
+    list_filter = ("group", "is_active")
+    search_fields = ("name", "group__name")
+    ordering = ("group", "start_time")
 
 
 @admin.register(OpeningScheduleType)
