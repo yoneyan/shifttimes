@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -62,6 +63,12 @@ class TimeSlot(models.Model):
         return "%s %s〜%s" % (self.name, start, end)
 
 
+SCHEDULE_TYPE_COLOR_VALIDATOR = RegexValidator(
+    regex=r"^#[0-9a-fA-F]{6}$",
+    message="表示色は #rrggbb の形式で指定してください。",
+)
+
+
 class OpeningScheduleType(models.Model):
     """グループごとに変更できる開講区分"""
 
@@ -81,6 +88,8 @@ class OpeningScheduleType(models.Model):
     group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE, related_name="opening_schedule_types",
                               verbose_name="グループ")
     name = models.CharField("区分名", max_length=100)
+    color = models.CharField("表示色", max_length=7, default="#0d6efd",
+                             validators=[SCHEDULE_TYPE_COLOR_VALIDATOR])
     blocks_shift_input = models.BooleanField("シフト入力不可", default=False)
     is_active = models.BooleanField("有効", default=True)
     display_order = models.PositiveSmallIntegerField("表示順", default=100)

@@ -66,6 +66,19 @@
       justify-content: center;
     }
 
+    .schedule-color-preset {
+      border: 1px solid #adb5bd;
+      border-radius: .2rem;
+      height: 1.6rem;
+      padding: 0;
+      width: 1.6rem;
+    }
+
+    .schedule-color-preset:focus-visible {
+      outline: 2px solid #0d6efd;
+      outline-offset: 1px;
+    }
+
     .schedule-dot {
       border-radius: .15rem;
       display: inline-block;
@@ -216,31 +229,32 @@
         </tr>
         </thead>
         <tbody>
-        {% for row in schedule_type_rows %}
+        {% for schedule_type in schedule_types %}
           <tr class="schedule-type-row"
-              data-id="{{ row.schedule_type.id }}"
-              data-name="{{ row.schedule_type.name }}"
-              data-blocks="{% if row.schedule_type.blocks_shift_input %}1{% endif %}"
-              data-active="{% if row.schedule_type.is_active %}1{% endif %}"
-              data-order="{{ row.schedule_type.display_order }}">
+              data-id="{{ schedule_type.id }}"
+              data-name="{{ schedule_type.name }}"
+              data-color="{{ schedule_type.color }}"
+              data-blocks="{% if schedule_type.blocks_shift_input %}1{% endif %}"
+              data-active="{% if schedule_type.is_active %}1{% endif %}"
+              data-order="{{ schedule_type.display_order }}">
             <td>
-              <span class="schedule-dot" style="background: {{ row.color }}"></span>{{ row.schedule_type.name }}
+              <span class="schedule-dot" style="background: {{ schedule_type.color }}"></span>{{ schedule_type.name }}
             </td>
             <td>
-              {% if row.schedule_type.blocks_shift_input %}
+              {% if schedule_type.blocks_shift_input %}
                 <span class="badge text-bg-danger">不可</span>
               {% else %}
                 <span class="badge text-bg-success">可</span>
               {% endif %}
             </td>
             <td>
-              {% if row.schedule_type.is_active %}
+              {% if schedule_type.is_active %}
                 <span class="badge text-bg-primary">有効</span>
               {% else %}
                 <span class="badge text-bg-secondary">無効</span>
               {% endif %}
             </td>
-            <td>{{ row.schedule_type.display_order }}</td>
+            <td>{{ schedule_type.display_order }}</td>
           </tr>
         {% endfor %}
         </tbody>
@@ -369,6 +383,19 @@
               <label class="form-label small fw-bold" for="scheduleTypeName">区分名</label>
               <input type="text" class="form-control" id="scheduleTypeName" name="name" maxlength="100"
                      placeholder="例: 休校、自習室" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold" for="scheduleTypeColor">表示色</label>
+              <div class="d-flex flex-wrap align-items-center gap-2">
+                <input type="color" class="form-control form-control-color" id="scheduleTypeColor" name="color"
+                       value="{{ default_schedule_type_color }}" required>
+                {% for color in schedule_type_palette %}
+                  <button type="button" class="schedule-color-preset" data-color="{{ color }}"
+                          style="background: {{ color }}" title="{{ color }}"
+                          aria-label="表示色を {{ color }} にする"></button>
+                {% endfor %}
+              </div>
+              <div class="form-text">カレンダーや凡例に表示されるバッジの色です。</div>
             </div>
             <div class="form-check form-switch mb-2">
               <input class="form-check-input" type="checkbox" id="scheduleTypeBlocks" name="blocks_shift_input">
@@ -610,19 +637,28 @@
       // 開講区分
       const typeModalEl = document.getElementById("scheduleTypeModal");
       const typeModal = new bootstrap.Modal(typeModalEl);
+      const defaultTypeColor = "{{ default_schedule_type_color }}";
+      const typeColorInput = document.getElementById("scheduleTypeColor");
       const fillTypeModal = function (data) {
         document.getElementById("scheduleTypeId").value = data.id || "";
         document.getElementById("scheduleTypeName").value = data.name || "";
+        typeColorInput.value = data.color || defaultTypeColor;
         document.getElementById("scheduleTypeBlocks").checked = Boolean(data.blocks);
         document.getElementById("scheduleTypeActive").checked = data.id ? Boolean(data.active) : true;
         document.getElementById("scheduleTypeOrder").value = data.order || 100;
         document.getElementById("scheduleTypeModalLabel").textContent = data.id ? "開講区分の編集" : "開講区分の追加";
       };
+      typeModalEl.querySelectorAll(".schedule-color-preset").forEach(function (preset) {
+        preset.addEventListener("click", function () {
+          typeColorInput.value = preset.dataset.color;
+        });
+      });
       document.querySelectorAll("tr.schedule-type-row").forEach(function (row) {
         row.addEventListener("click", function () {
           fillTypeModal({
             id: row.dataset.id,
             name: row.dataset.name,
+            color: row.dataset.color,
             blocks: row.dataset.blocks,
             active: row.dataset.active,
             order: row.dataset.order,

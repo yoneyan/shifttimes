@@ -342,6 +342,62 @@ class ShiftViewTests(TestCase):
         self.assertTrue(created.blocks_shift_input)
         self.assertFalse(created.is_active)
 
+    def test_schedule_type_color_is_saved_and_used_on_calendar(self):
+        """開講区分ごとに表示色を設定でき、カレンダーの凡例にも反映される"""
+        self.client.force_login(self.admin_user)
+        settings_url = reverse("shift:schedule_settings", args=[self.group.id])
+
+        self.client.post(settings_url, {
+            "action": "schedule_type",
+            "name": "研修日",
+            "color": "#AB12CD",
+            "display_order": "40",
+            "is_active": "on",
+        })
+        created = OpeningScheduleType.objects.get(group=self.group, name="研修日")
+        self.assertEqual(created.color, "#ab12cd")
+
+        self.client.post(settings_url, {
+            "action": "schedule_type",
+            "schedule_type_id": str(created.id),
+            "name": "研修日",
+            "color": "#123456",
+            "display_order": "40",
+            "is_active": "on",
+        })
+        created.refresh_from_db()
+        self.assertEqual(created.color, "#123456")
+
+        legend = self.client.get(reverse("shift:schedule", args=[self.group.id])).context["legend"]
+        self.assertIn({"name": "研修日", "color": "#123456"}, legend)
+
+    def test_schedule_type_rejects_invalid_color(self):
+        schedule_type = OpeningScheduleType.objects.create(
+            group=self.group, name="研修日", color="#123456",
+        )
+        self.client.force_login(self.admin_user)
+
+        self.client.post(reverse("shift:schedule_settings", args=[self.group.id]), {
+            "action": "schedule_type",
+            "schedule_type_id": str(schedule_type.id),
+            "name": "研修日",
+            "color": "red; background:url(x)",
+            "display_order": "100",
+            "is_active": "on",
+        })
+
+        schedule_type.refresh_from_db()
+        self.assertEqual(schedule_type.color, "#123456")
+
+    def test_schedule_settings_suggests_unused_color(self):
+        self.client.force_login(self.admin_user)
+        response = self.client.get(reverse("shift:schedule_settings", args=[self.group.id]))
+
+        used_colors = set(
+            OpeningScheduleType.objects.filter(group=self.group).values_list("color", flat=True)
+        )
+        self.assertNotIn(response.context["default_schedule_type_color"], used_colors)
+
     def test_schedule_page_creates_default_schedule_types_for_admin(self):
         self.client.force_login(self.admin_user)
 

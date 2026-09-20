@@ -26,10 +26,11 @@ class TimeSlotAdmin(SimpleHistoryAdmin):
 @admin.register(OpeningScheduleType)
 class OpeningScheduleTypeAdmin(SimpleHistoryAdmin):
     fieldsets = (
-        (None, {"fields": ("group", "name", "blocks_shift_input", "is_active", "display_order")}),
+        (None, {"fields": ("group", "name", "color", "blocks_shift_input", "is_active", "display_order")}),
         ("audit", {"fields": ("created_at", "updated_at")}),
     )
-    list_display = ("id", "group", "name", "blocks_shift_input", "is_active", "display_order", "updated_at")
+    list_display = ("id", "group", "name", "color", "blocks_shift_input", "is_active", "display_order",
+                    "updated_at")
     list_filter = ("group", "blocks_shift_input", "is_active")
     search_fields = ("name", "group__name")
     readonly_fields = ("created_at", "updated_at")

@@ -123,17 +123,18 @@ def _weekday_label(weekday):
 
 def _ensure_default_opening_schedule_types(group):
     defaults = (
-        ("開講", False, 10),
-        ("休校", True, 20),
-        ("自習室", False, 30),
+        ("開講", False, 10, "#0d6efd"),
+        ("休校", True, 20, "#dc3545"),
+        ("自習室", False, 30, "#198754"),
     )
-    for name, blocks_shift_input, display_order in defaults:
+    for name, blocks_shift_input, display_order, color in defaults:
         OpeningScheduleType.objects.get_or_create(
             group=group,
             name=name,
             defaults={
                 "blocks_shift_input": blocks_shift_input,
                 "display_order": display_order,
+                "color": color,
             },
         )
 
@@ -400,7 +401,7 @@ def shift_calendar(request, group_id):
             })
         return {
             "schedule": schedule,
-            "schedule_color": _schedule_type_color(schedule.schedule_type) if schedule else "",
+            "schedule_color": schedule.schedule_type.color if schedule else "",
             "is_blocked": schedule is not None and schedule.schedule_type.blocks_shift_input,
             "chips": chips,
             "entry_url": "%s?date=%s" % (
@@ -449,7 +450,7 @@ def _render_schedule_calendar(request, group, is_admin):
         schedule = schedule_map.get(work_date)
         return {
             "schedule": schedule,
-            "schedule_color": _schedule_type_color(schedule.schedule_type) if schedule else "",
+            "schedule_color": schedule.schedule_type.color if schedule else "",
             "is_blocked": schedule is not None and schedule.schedule_type.blocks_shift_input,
         }
 
@@ -765,8 +766,10 @@ def summary_index(request):
     return _admin_group_landing(request, "提出状況", "shift:summary")
 
 
+# 開講区分を追加するときに提案する表示色
 _SCHEDULE_TYPE_PALETTE = [
     "#0d6efd",  # blue
+    "#dc3545",  # red
     "#198754",  # green
     "#fd7e14",  # orange
     "#6f42c1",  # purple
@@ -777,12 +780,15 @@ _SCHEDULE_TYPE_PALETTE = [
 ]
 
 
-def _schedule_type_color(schedule_type):
-    """開講区分に対応する色を返す（blocks_shift_input のもの は赤固定）"""
-    if schedule_type.blocks_shift_input:
-        return "#dc3545"
-    # id をパレット数で割り切った位置の色を返す
-    return _SCHEDULE_TYPE_PALETTE[schedule_type.id % len(_SCHEDULE_TYPE_PALETTE)]
+def _next_schedule_type_color(group):
+    """まだ使われていないパレットの色を返す（すべて使用済みならパレットの先頭）"""
+    used_colors = set(
+        OpeningScheduleType.objects.filter(group=group).values_list("color", flat=True)
+    )
+    for color in _SCHEDULE_TYPE_PALETTE:
+        if color not in used_colors:
+            return color
+    return _SCHEDULE_TYPE_PALETTE[0]
 
 
 def _schedule_legend(group):
@@ -790,7 +796,7 @@ def _schedule_legend(group):
     schedule_types = list(
         OpeningScheduleType.objects.filter(group=group, is_active=True).order_by("display_order", "name")
     )
-    return [{"name": st.name, "color": _schedule_type_color(st)} for st in schedule_types]
+    return [{"name": st.name, "color": st.color} for st in schedule_types]
 
 
 @login_required
@@ -910,13 +916,6 @@ def schedule_settings(request, group_id):
     ]
 
     schedule_types = OpeningScheduleType.objects.filter(group=group).order_by("display_order", "name")
-    schedule_type_rows = [
-        {
-            "schedule_type": schedule_type,
-            "color": _schedule_type_color(schedule_type),
-        }
-        for schedule_type in schedule_types
-    ]
     deadlines = ShiftDeadline.objects.filter(group=group).order_by("-period_start")[:24]
     open_period = _open_shift_period(group)
 
@@ -933,7 +932,7 @@ def schedule_settings(request, group_id):
         schedule_rows.append({
             "work_date": work_date,
             "date_schedule": date_schedule,
-            "color": _schedule_type_color(date_schedule.schedule_type) if date_schedule else "",
+            "color": date_schedule.schedule_type.color if date_schedule else "",
             "is_today": work_date == today,
             "schedule_type_id": date_schedule.schedule_type_id if date_schedule else "",
             "note": date_schedule.note if date_schedule else "",
@@ -943,7 +942,7 @@ def schedule_settings(request, group_id):
         {
             "id": schedule_type.id,
             "name": schedule_type.name,
-            "color": _schedule_type_color(schedule_type),
+            "color": schedule_type.color,
             "blocks_shift_input": schedule_type.blocks_shift_input,
         }
         for schedule_type in schedule_types
@@ -954,7 +953,8 @@ def schedule_settings(request, group_id):
         "group": group,
         "time_slot_rows": time_slot_rows,
         "schedule_types": schedule_types,
-        "schedule_type_rows": schedule_type_rows,
+        "schedule_type_palette": _SCHEDULE_TYPE_PALETTE,
+        "default_schedule_type_color": _next_schedule_type_color(group),
         "schedule_type_options": schedule_type_options,
         "schedule_rows": schedule_rows,
         "current_month": current_month,
@@ -1083,7 +1083,7 @@ def summary(request, group_id):
             "is_today": work_date == today,
             "show_month": work_date.month != previous_month,
             "opening_schedule": sched,
-            "schedule_color": _schedule_type_color(sched.schedule_type) if sched else "",
+            "schedule_color": sched.schedule_type.color if sched else "",
             "is_blocked": sched is not None and sched.schedule_type.blocks_shift_input,
         })
         previous_month = work_date.month

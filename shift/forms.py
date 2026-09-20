@@ -77,9 +77,10 @@ class OpeningScheduleTypeForm(forms.ModelForm):
 
     class Meta:
         model = OpeningScheduleType
-        fields = ("name", "blocks_shift_input", "is_active", "display_order")
+        fields = ("name", "color", "blocks_shift_input", "is_active", "display_order")
         widgets = {
             "name": forms.TextInput(attrs={"class": "form-control", "placeholder": "例: 休校、自習室"}),
+            "color": forms.TextInput(attrs={"type": "color", "class": "form-control form-control-color"}),
             "blocks_shift_input": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "display_order": forms.NumberInput(attrs={"class": "form-control", "min": 0}),
@@ -88,6 +89,12 @@ class OpeningScheduleTypeForm(forms.ModelForm):
     def __init__(self, *args, group=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.group = group
+        self.fields["color"].required = False
+
+    def clean_color(self):
+        # <input type="color"> は #rrggbb で送られてくるが、大文字・小文字を揃えて保存する。
+        # 未指定なら編集前の色（新規なら既定色）を保つ
+        return (self.cleaned_data.get("color") or self.instance.color).lower()
 
     def clean_name(self):
         name = self.cleaned_data["name"]

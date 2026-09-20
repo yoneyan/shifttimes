@@ -66,7 +66,7 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 | モデル | 説明 |
 |---|---|
 | `TimeSlot` | グループごとの勤務時間（時間帯）マスタ。開始・終了時刻を持ち、`(group, name)` が一意 |
-| `OpeningScheduleType` | グループごとの開講区分。`blocks_shift_input` が真の日はシフト入力を禁止 |
+| `OpeningScheduleType` | グループごとの開講区分。`color`（`#rrggbb`）でカレンダーの表示色を指定。`blocks_shift_input` が真の日はシフト入力を禁止 |
 | `DateOpeningSchedule` | 日付ごとの開講区分の割り当て |
 | `ShiftEntry` | シフト希望。`(group, user, work_date, time_slot)` が一意。`is_draft` で下書き管理 |
 | `ShiftDeadline` | 対象期間（`period_start`〜`period_end`）と提出期限 |
