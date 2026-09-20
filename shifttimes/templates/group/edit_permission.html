@@ -10,6 +10,9 @@
       <i class="bi bi-gear me-1"></i>管理者ページ
     </a>
   {% endif %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth_group:members' group.id %}">
+    <i class="bi bi-people me-1"></i>メンバー一覧
+  </a>
   <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth_group:index' %}">
     <i class="bi bi-arrow-left me-1"></i>グループ一覧へ戻る
   </a>

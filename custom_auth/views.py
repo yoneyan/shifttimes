@@ -153,6 +153,36 @@ def list_group(request, group_id: int):
 
 
 @login_required
+def group_members(request, group_id: int):
+    user_group = request.user.usergroup_set.filter(group_id=group_id, user=request.user).first()
+    if not user_group:
+        return render(request, "error.html", {"text": "このグループにアクセスする権限がありません"})
+
+    memberships = (
+        user_group.group.usergroup_set.select_related("user")
+        .order_by("-is_admin", "user__username_jp", "user__username")
+    )
+    members = [
+        {
+            "user": membership.user,
+            "is_admin": membership.is_admin,
+            "created_at": membership.created_at,
+            "is_me": membership.user_id == request.user.id,
+        }
+        for membership in memberships
+    ]
+
+    context = {
+        "group": user_group.group,
+        "members": members,
+        "member_count": len(members),
+        "admin_count": sum(1 for member in members if member["is_admin"]),
+        "is_administrator": user_group.is_admin,
+    }
+    return render(request, "group/members.html", context)
+
+
+@login_required
 def add_group(request):
     error = None
     form = GroupAddForm(data=request.POST or None)
@@ -176,7 +206,7 @@ def edit_group(request, group_id: int):
         return render(request, "error.html", {"text": "このグループにアクセスする権限がありません"})
     form = GroupForm(request.POST or None, instance=user_group.group,
                      editable=not user_group.is_admin)
-    if request.method == "POST" and user_group.is_admin and user_group.group.is_pass:
+    if request.method == "POST" and user_group.is_admin:
         if form.is_valid():
             form.save()
             return render(request, "done.html", {"text": "登録・変更が完了しました"})
@@ -192,7 +222,7 @@ def group_permission(request, group_id: int):
     if not user_group:
         return render(request, "error.html", {"text": "このグループにアクセスする権限がありません"})
     permissions = user_group.group.usergroup_set.all()
-    if request.method == "POST" and user_group.is_admin and user_group.group.is_pass:
+    if request.method == "POST" and user_group.is_admin:
         permission_id = int(request.POST.get("id", 0))
         is_exists = user_group.group.usergroup_set.filter(id=permission_id).exists()
         if not is_exists:

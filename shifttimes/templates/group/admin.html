@@ -55,8 +55,11 @@
   </section>
 
   <section class="mb-4">
-    <h2 class="h5 mb-3">ユーザ登録</h2>
+    <h2 class="h5 mb-3">メンバー管理</h2>
     <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-primary" href="{% url 'custom_auth_group:members' group.id %}">
+        <i class="bi bi-people me-1"></i>メンバー一覧
+      </a>
       <a class="btn btn-primary" href="{% url 'custom_auth_group:register_member' group.id %}">
         <i class="bi bi-person-plus me-1"></i>ユーザ登録
       </a>

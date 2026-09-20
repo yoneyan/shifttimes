@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}メンバー一覧 | {% endblock %}
+{% block page_title %}メンバー一覧{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }} / {{ group.name }}</p>
+{% endblock %}
+{% block page_actions %}
+  {% if is_administrator %}
+    <a class="btn btn-primary btn-sm" href="{% url 'custom_auth_group:register_member' group.id %}">
+      <i class="bi bi-person-plus me-1"></i>ユーザ登録
+    </a>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth_group:permission' group.id %}">
+      <i class="bi bi-shield-lock me-1"></i>権限設定
+    </a>
+  {% endif %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth_group:index' %}">
+    <i class="bi bi-arrow-left me-1"></i>グループ一覧へ戻る
+  </a>
+{% endblock %}
+{% block content %}
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    <span class="badge text-bg-secondary">メンバー数: {{ member_count }}</span>
+    <span class="badge text-bg-dark">管理者: {{ admin_count }}</span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead class="table-light">
+      <tr>
+        <th scope="col">ユーザ</th>
+        {% if is_administrator %}
+          <th scope="col">メールアドレス</th>
+          <th scope="col">状態</th>
+        {% endif %}
+        <th scope="col">権限</th>
+        <th scope="col">追加日</th>
+      </tr>
+      </thead>
+      <tbody>
+      {% for member in members %}
+        <tr>
+          <td>
+            <div class="fw-bold">
+              {{ member.user.get_display_name }}
+              {% if member.is_me %}<span class="badge text-bg-light text-muted">自分</span>{% endif %}
+            </div>
+            <div class="small text-muted">{{ member.user.username_jp }} / {{ member.user.username }}</div>
+          </td>
+          {% if is_administrator %}
+            <td class="small text-muted">{{ member.user.email }}</td>
+            <td>
+              {% if member.user.is_active %}
+                <span class="badge text-bg-success">有効</span>
+              {% else %}
+                <span class="badge text-bg-warning">未有効化</span>
+              {% endif %}
+            </td>
+          {% endif %}
+          <td>
+            {% if member.is_admin %}
+              <span class="badge text-bg-dark">管理者</span>
+            {% else %}
+              <span class="badge text-bg-secondary">メンバー</span>
+            {% endif %}
+          </td>
+          <td class="small text-muted text-nowrap">{{ member.created_at|date:"Y/m/d" }}</td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="{% if is_administrator %}5{% else %}3{% endif %}" class="text-center text-muted py-4">
+            メンバーがいません。
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if not is_administrator %}
+    <p class="text-muted small mb-0">
+      メールアドレスなどの詳細情報はグループ管理者のみ閲覧できます。
+    </p>
+  {% endif %}
+{% endblock content %}
