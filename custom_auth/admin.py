@@ -52,6 +52,32 @@ class Group(SimpleHistoryAdmin):
             "name", "name_jp", "status", "comment")}),
         ("Membership", {"fields": ("membership_type", "membership_expired_at")}),
         (
+            "無償化",
+            {
+                "description": (
+                    "運営判断で Stripe 契約なしに有料プラン相当を付与する。"
+                    "期限は Membership の「有効期限」を使う（未設定なら無期限）。"
+                    "有料契約と併用している場合は上位のプランが適用される。"
+                ),
+                "fields": ("free_plan", "free_reason"),
+            },
+        ),
+        (
+            "Stripe",
+            {
+                "description": "Stripe 側の状態のキャッシュ。Webhook と請求画面で自動的に同期される。",
+                "classes": ("collapse",),
+                "fields": (
+                    "stripe_customer_id",
+                    "stripe_subscription_id",
+                    "stripe_plan",
+                    "stripe_status",
+                    "stripe_current_period_end",
+                    "stripe_cancel_at_period_end",
+                ),
+            },
+        ),
+        (
             "Personal info",
             {
                 "fields": (
@@ -70,9 +96,14 @@ class Group(SimpleHistoryAdmin):
         "name_jp",
         "membership_type",
         "membership_expired_at",
+        "free_plan",
+        "stripe_plan",
+        "stripe_status",
     )
     list_filter = (
         "membership_type",
+        "free_plan",
+        "stripe_status",
     )
     search_fields = (
         "name",
@@ -81,6 +112,13 @@ class Group(SimpleHistoryAdmin):
     readonly_fields = (
         "created_at",
         "updated_at",
+        # Stripe が真実の情報源なので管理画面からは編集させない
+        "stripe_customer_id",
+        "stripe_subscription_id",
+        "stripe_plan",
+        "stripe_status",
+        "stripe_current_period_end",
+        "stripe_cancel_at_period_end",
     )
 
     inlines = (

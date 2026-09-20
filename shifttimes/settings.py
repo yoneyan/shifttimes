@@ -156,12 +156,24 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
+# 無料プラン（Stripe 契約なしのグループに適用される既定の上限）
+FREE_PLAN = {
+    "name": "Free",
+    "price_id": "",
+    "amount": 0,
+    "max_members": int(os.environ.get("FREE_PLAN_MAX_MEMBERS", 10)),
+    "rank": 0,
+    "recommended": False,
+}
+
+# 有料プラン。rank は上下比較（アップグレード / ダウングレード判定）に使う
 STRIPE_PLANS = {
     "standard": {
         "name": "Standard",
         "price_id": os.environ.get("STRIPE_PRICE_ID_STANDARD", ""),
         "amount": 1980,
         "max_members": 30,
+        "rank": 10,
         "recommended": True,
     },
     "pro1": {
@@ -169,6 +181,7 @@ STRIPE_PLANS = {
         "price_id": os.environ.get("STRIPE_PRICE_ID_PRO1", ""),
         "amount": 4980,
         "max_members": 100,
+        "rank": 20,
         "recommended": False,
     },
     "pro2": {
@@ -176,9 +189,23 @@ STRIPE_PLANS = {
         "price_id": os.environ.get("STRIPE_PRICE_ID_PRO2", ""),
         "amount": 9980,
         "max_members": 250,
+        "rank": 30,
         "recommended": False,
     },
 }
+
+# 運営が無償付与したグループに適用する上限（max_members=None は無制限）
+UNLIMITED_PLAN = {
+    "name": "Enterprise",
+    "price_id": "",
+    "amount": 0,
+    "max_members": None,
+    "rank": 99,
+    "recommended": False,
+}
+
+# 問い合わせ先（Enterprise プランの導線）
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "contact@example.com")
 
 # 認証アプリに表示されるサービス名（TOTP の issuer）
 APP_NAME = os.environ.get("APP_NAME", "ShiftTimes")

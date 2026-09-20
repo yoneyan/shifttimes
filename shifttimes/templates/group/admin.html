@@ -18,8 +18,18 @@
         UserID: {{ request.user.username }} / {{ request.user.email }}
       </p>
     </div>
-    <div class="card-footer bg-white">
-      <span class="badge text-bg-secondary">メンバー数: {{ member_count }}</span>
+    <div class="card-footer bg-white d-flex flex-wrap gap-2 align-items-center">
+      <span class="badge {% if can_add_member %}text-bg-secondary{% else %}text-bg-danger{% endif %}">
+        メンバー数: {{ member_count }}{% if max_members %} / {{ max_members }}{% endif %}
+      </span>
+      <span class="badge text-bg-light border">
+        プラン: {{ current_plan.name }}{% if is_free_granted %}（無償付与）{% endif %}
+      </span>
+      {% if not can_add_member %}
+        <a class="small link-danger" href="{% url 'custom_auth_group:billing' group.id %}">
+          上限に達しています。プランを確認する
+        </a>
+      {% endif %}
     </div>
   </div>
 

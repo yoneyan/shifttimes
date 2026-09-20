@@ -72,6 +72,52 @@ CONTRACT_TYPE_CHOICES = (
     ("AirMail", "AirMail)"),
 )
 
+# Stripe のサブスクリプションステータス
+SUBSCRIPTION_STATUS_CHOICES = (
+    ("", "未契約"),
+    ("trialing", "トライアル中"),
+    ("active", "有効"),
+    ("past_due", "支払い遅延"),
+    ("unpaid", "未払い"),
+    ("incomplete", "決済未完了"),
+    ("incomplete_expired", "決済未完了(期限切れ)"),
+    ("paused", "一時停止"),
+    ("canceled", "解約済み"),
+)
+
+# 機能を利用させてよいステータス。past_due は Stripe のリトライ期間中なので猶予する
+ACTIVE_SUBSCRIPTION_STATUSES = ("trialing", "active", "past_due")
+
+# 無償付与で「人数無制限」を表すプランキー
+UNLIMITED_PLAN_KEY = "unlimited"
+
+
+def get_plan(plan_key):
+    """プランキーからプラン定義を返す。未知のキーは無料プラン扱いにする。"""
+    if plan_key == UNLIMITED_PLAN_KEY:
+        return settings.UNLIMITED_PLAN
+    return settings.STRIPE_PLANS.get(plan_key, settings.FREE_PLAN)
+
+
+def get_plan_by_price_id(price_id):
+    """Stripe の price_id から (プランキー, プラン定義) を引く。"""
+    if price_id:
+        for key, plan in settings.STRIPE_PLANS.items():
+            if plan["price_id"] and plan["price_id"] == price_id:
+                return key, plan
+    return "", settings.FREE_PLAN
+
+
+def free_plan_choices():
+    """無償付与プランの選択肢を settings のプラン定義から組み立てる。"""
+    choices = [("", "なし(通常の課金対象)")]
+    choices += [
+        (key, f"{plan['name']} 相当(最大{plan['max_members']}名)")
+        for key, plan in settings.STRIPE_PLANS.items()
+    ]
+    choices.append((UNLIMITED_PLAN_KEY, f"{settings.UNLIMITED_PLAN['name']} 相当(人数無制限)"))
+    return choices
+
 
 class Group(models.Model):  # noqa: F811
     created_at = models.DateTimeField("作成日", default=timezone.now)
@@ -85,6 +131,18 @@ class Group(models.Model):  # noqa: F811
 
     stripe_customer_id = models.CharField("Stripe(CusID)", max_length=200, blank=True, null=True)
     stripe_subscription_id = models.CharField("Stripe(SubID)", max_length=200, blank=True, null=True)
+    # Stripe 側の契約状態のキャッシュ。Webhook と請求画面の表示時に同期する
+    stripe_plan = models.CharField("契約プラン", max_length=50, default="", blank=True)
+    stripe_status = models.CharField("契約ステータス", max_length=50, default="", blank=True,
+                                     choices=SUBSCRIPTION_STATUS_CHOICES)
+    stripe_current_period_end = models.DateTimeField("現在の請求期間の終了日", blank=True, null=True)
+    stripe_cancel_at_period_end = models.BooleanField("期間末に解約予定", default=False)
+
+    # 無償化: 運営判断で Stripe 契約なしに有料プラン相当を付与する。
+    # 期限は membership_expired_at を使う(未設定なら無期限)
+    free_plan = models.CharField("無償付与プラン", max_length=50, default="", blank=True,
+                                 choices=free_plan_choices)
+    free_reason = models.CharField("無償付与の理由", max_length=250, default="", blank=True)
 
     # group personal info
     postcode = models.CharField("郵便番号", max_length=20, default="")
@@ -111,6 +169,50 @@ class Group(models.Model):  # noqa: F811
 
     def __str__(self):
         return "%s: %s" % (self.id, self.name)
+
+    @property
+    def is_free_granted(self):
+        """運営により無償でプランが付与されているか(期限切れは対象外)。"""
+        if not self.free_plan:
+            return False
+        if self.membership_expired_at and self.membership_expired_at < timezone.now():
+            return False
+        return True
+
+    @property
+    def has_active_subscription(self):
+        """Stripe の契約が機能を利用できる状態か。"""
+        return self.stripe_status in ACTIVE_SUBSCRIPTION_STATUSES
+
+    @property
+    def plan_key(self):
+        """実際に適用されるプランのキー。無償付与と有料契約のうち上位を採用する。"""
+        candidates = [("", settings.FREE_PLAN)]
+        if self.is_free_granted:
+            candidates.append((self.free_plan, get_plan(self.free_plan)))
+        if self.has_active_subscription and self.stripe_plan:
+            candidates.append((self.stripe_plan, get_plan(self.stripe_plan)))
+        return max(candidates, key=lambda candidate: candidate[1]["rank"])[0]
+
+    @property
+    def plan(self):
+        """実際に適用されるプラン定義。"""
+        return get_plan(self.plan_key)
+
+    @property
+    def max_members(self):
+        """メンバー数の上限。None は無制限。"""
+        return self.plan["max_members"]
+
+    @property
+    def member_count(self):
+        return self.usergroup_set.count()
+
+    def can_add_member(self, count=1):
+        """あと count 人メンバーを追加できるか。"""
+        if self.max_members is None:
+            return True
+        return self.member_count + count <= self.max_members
 
 
 class UserManager(BaseUserManager):

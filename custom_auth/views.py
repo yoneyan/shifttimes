@@ -178,6 +178,8 @@ def group_members(request, group_id: int):
         "member_count": len(members),
         "admin_count": sum(1 for member in members if member["is_admin"]),
         "is_administrator": user_group.is_admin,
+        "max_members": user_group.group.max_members,
+        "current_plan": user_group.group.plan,
     }
     return render(request, "group/members.html", context)
 
@@ -255,10 +257,15 @@ def group_admin_home(request, group_id: int):
     if not user_group or not user_group.is_admin:
         return render(request, "error.html", {"text": "このグループの管理者権限がありません"})
 
+    group = user_group.group
     context = {
-        "group": user_group.group,
-        "member_count": user_group.group.usergroup_set.count(),
-        "attendance_setting": AttendanceSetting.objects.filter(group=user_group.group).first(),
+        "group": group,
+        "member_count": group.member_count,
+        "max_members": group.max_members,
+        "current_plan": group.plan,
+        "is_free_granted": group.is_free_granted,
+        "can_add_member": group.can_add_member(),
+        "attendance_setting": AttendanceSetting.objects.filter(group=group).first(),
     }
     return render(request, "group/admin.html", context)
 
@@ -268,9 +275,21 @@ def _register_user_to_group(request, group_id: int, is_admin_role: bool):
     if not user_group or not user_group.is_admin:
         return render(request, "error.html", {"text": "このグループの管理者権限がありません"})
 
+    group = user_group.group
+    # プランの人数上限に達していたら登録させない
+    limit_reached = not group.can_add_member()
+    limit_message = None
+    if limit_reached:
+        limit_message = (
+            f"メンバー数が{group.plan['name']}プランの上限({group.max_members}名)に達しています。"
+            "プランをアップグレードするか、メンバーを減らしてください。"
+        )
+
     error = None
     form = SignUpForm(data=request.POST or None)
-    if request.method == "POST" and form.is_valid():
+    if request.method == "POST" and limit_reached:
+        error = limit_message
+    elif request.method == "POST" and form.is_valid():
         duplicated = (
             User.objects.filter(username=form.cleaned_data["username"]).exists()
             or User.objects.filter(username_jp=form.cleaned_data["username_jp"]).exists()
@@ -280,14 +299,19 @@ def _register_user_to_group(request, group_id: int, is_admin_role: bool):
             error = "同じユーザ名またはメールアドレスがすでに登録されています"
         else:
             new_user = form.create_user()
-            UserGroup.objects.create(user=new_user, group=user_group.group, is_admin=is_admin_role)
+            UserGroup.objects.create(user=new_user, group=group, is_admin=is_admin_role)
             return render(request, "done.html", {"text": "ユーザを登録しました。本人確認用のメールを送信しました。"})
 
     context = {
         "form": form,
         "error": error,
-        "group": user_group.group,
+        "group": group,
         "is_admin_register": is_admin_role,
+        "limit_reached": limit_reached,
+        "limit_message": limit_message,
+        "member_count": group.member_count,
+        "max_members": group.max_members,
+        "current_plan": group.plan,
     }
     return render(request, "group/register.html", context)
 
