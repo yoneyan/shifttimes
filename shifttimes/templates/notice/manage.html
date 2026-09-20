@@ -1,0 +1,247 @@
+{% extends 'base.html' %}
+{% block extrahead %}
+  <style>
+    .notice-table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .notice-table th,
+    .notice-table td {
+      border: 1px solid #adb5bd;
+      padding: .45rem .5rem;
+      vertical-align: top;
+    }
+
+    .notice-table thead th {
+      background: #f1f3f5;
+      font-size: .8rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .notice-table tbody tr.notice-row {
+      cursor: pointer;
+    }
+
+    .notice-table tbody tr.notice-row:hover td {
+      background: #e7f1ff;
+    }
+
+    .notice-period {
+      white-space: nowrap;
+    }
+
+    @media (max-width: 575.98px) {
+      .notice-table th,
+      .notice-table td { font-size: .82rem; padding: .4rem .3rem; }
+    }
+  </style>
+{% endblock extrahead %}
+
+{% block title %}通知管理 | {% endblock %}
+{% block page_title %}通知管理{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">お知らせページに掲示する通知を追加・編集します。</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'notice:index' %}">
+    <i class="bi bi-bell me-1"></i>お知らせページへ
+  </a>
+{% endblock %}
+{% block content %}
+
+  <section class="mb-5">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+      <h2 class="h5 mb-0">通知一覧</h2>
+      <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal"
+              data-bs-target="#noticeModal" data-mode="add">
+        <i class="bi bi-plus-lg me-1"></i>追加
+      </button>
+    </div>
+    <p class="text-muted small mb-2">
+      行をタップすると内容を編集できます。掲示期間は「通知開始日」から「通知終了日」までで、
+      終了日を空にすると期限なしで掲示されます。
+    </p>
+
+    <div class="table-responsive">
+      <table class="notice-table">
+        <thead>
+        <tr>
+          <th scope="col">掲示期間</th>
+          <th scope="col">種別</th>
+          <th scope="col">タイトル</th>
+          <th scope="col">区分</th>
+          <th scope="col">状態</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for row in notice_rows %}
+          <tr class="notice-row"
+              data-id="{{ row.notice.id }}"
+              data-type1="{{ row.notice.type1 }}"
+              data-title="{{ row.notice.title }}"
+              data-body="{{ row.notice.body }}"
+              data-start="{{ row.notice.start_at|date:'Y-m-d\TH:i' }}"
+              data-end="{{ row.notice.end_at|date:'Y-m-d\TH:i' }}"
+              data-active="{% if row.notice.is_active %}1{% endif %}"
+              data-important="{% if row.notice.is_important %}1{% endif %}"
+              data-fail="{% if row.notice.is_fail %}1{% endif %}"
+              data-info="{% if row.notice.is_info %}1{% endif %}"
+              data-delete-url="{% url 'notice:notice_delete' row.notice.id %}">
+            <td class="notice-period">
+              {{ row.notice.start_at|date:'Y/m/d H:i' }}<br>
+              <span class="text-muted">
+                〜{% if row.notice.end_at %}{{ row.notice.end_at|date:'Y/m/d H:i' }}{% else %}（期限なし）{% endif %}
+              </span>
+            </td>
+            <td>{{ row.notice.type1 }}</td>
+            <td>{{ row.notice.title }}</td>
+            <td>
+              {% if row.notice.is_fail %}<span class="badge text-bg-danger">障害</span>{% endif %}
+              {% if row.notice.is_important %}<span class="badge text-bg-warning">重要</span>{% endif %}
+              {% if row.notice.is_info %}<span class="badge text-bg-info">情報</span>{% endif %}
+            </td>
+            <td><span class="badge text-bg-{{ row.status.css }}">{{ row.status.label }}</span></td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="5" class="text-muted py-4">通知はまだありません。</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# ===== 通知ダイアログ ===== #}
+  <div class="modal fade" id="noticeModal" tabindex="-1" aria-labelledby="noticeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="notice_id" id="noticeId" value="">
+          <div class="modal-header">
+            <h5 class="modal-title" id="noticeModalLabel">通知</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label small fw-bold" for="noticeType1">種別</label>
+              <select class="form-select" id="noticeType1" name="type1" required>
+                {% for value, label in type1_choices %}
+                  <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold" for="noticeTitle">タイトル</label>
+              <input type="text" class="form-control" id="noticeTitle" name="title" maxlength="250" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold" for="noticeBody">内容（任意）</label>
+              <textarea class="form-control" id="noticeBody" name="body" rows="6"></textarea>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-12 col-sm-6">
+                <label class="form-label small fw-bold" for="noticeStartAt">通知開始日</label>
+                <input type="datetime-local" class="form-control" id="noticeStartAt" name="start_at" required>
+              </div>
+              <div class="col-12 col-sm-6">
+                <label class="form-label small fw-bold" for="noticeEndAt">通知終了日（任意）</label>
+                <input type="datetime-local" class="form-control" id="noticeEndAt" name="end_at">
+                <div class="form-text">空にすると期限なしで掲示します。</div>
+              </div>
+            </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="noticeActive" name="is_active" checked>
+              <label class="form-check-label" for="noticeActive">有効にする（お知らせページに掲示する）</label>
+            </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="noticeFail" name="is_fail">
+              <label class="form-check-label" for="noticeFail">障害として表示する</label>
+            </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="noticeImportant" name="is_important">
+              <label class="form-check-label" for="noticeImportant">重要として表示する</label>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="noticeInfo" name="is_info">
+              <label class="form-check-label" for="noticeInfo">情報として表示する</label>
+            </div>
+          </div>
+          <div class="modal-footer justify-content-between">
+            <button type="submit" class="btn btn-outline-danger d-none" id="noticeDelete" formnovalidate
+                    onclick="return confirm('この通知を削除しますか？');">
+              <i class="bi bi-trash me-1"></i>削除
+            </button>
+            <div class="d-flex gap-2 ms-auto">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg me-1"></i>登録
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+{% endblock content %}
+
+{% block javascript %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const modalEl = document.getElementById("noticeModal");
+      const modal = new bootstrap.Modal(modalEl);
+      const deleteBtn = document.getElementById("noticeDelete");
+      const defaultStartAt = "{{ default_start_at|date:'Y-m-d\TH:i' }}";
+
+      const fillModal = function (data) {
+        document.getElementById("noticeId").value = data.id || "";
+        document.getElementById("noticeType1").value = data.type1 || "{{ type1_choices.0.0 }}";
+        document.getElementById("noticeTitle").value = data.title || "";
+        document.getElementById("noticeBody").value = data.body || "";
+        document.getElementById("noticeStartAt").value = data.start || defaultStartAt;
+        document.getElementById("noticeEndAt").value = data.end || "";
+        document.getElementById("noticeActive").checked = data.id ? Boolean(data.active) : true;
+        document.getElementById("noticeImportant").checked = Boolean(data.important);
+        document.getElementById("noticeFail").checked = Boolean(data.fail);
+        document.getElementById("noticeInfo").checked = Boolean(data.info);
+        document.getElementById("noticeModalLabel").textContent = data.id ? "通知の編集" : "通知の追加";
+        if (data.deleteUrl) {
+          deleteBtn.setAttribute("formaction", data.deleteUrl);
+          deleteBtn.classList.remove("d-none");
+        } else {
+          deleteBtn.removeAttribute("formaction");
+          deleteBtn.classList.add("d-none");
+        }
+      };
+
+      document.querySelectorAll("tr.notice-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+          fillModal({
+            id: row.dataset.id,
+            type1: row.dataset.type1,
+            title: row.dataset.title,
+            body: row.dataset.body,
+            start: row.dataset.start,
+            end: row.dataset.end,
+            active: row.dataset.active,
+            important: row.dataset.important,
+            fail: row.dataset.fail,
+            info: row.dataset.info,
+            deleteUrl: row.dataset.deleteUrl,
+          });
+          modal.show();
+        });
+      });
+
+      modalEl.addEventListener("show.bs.modal", function (event) {
+        if (event.relatedTarget && event.relatedTarget.dataset.mode === "add") {
+          fillModal({});
+        }
+      });
+    });
+  </script>
+{% endblock javascript %}

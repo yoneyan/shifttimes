@@ -40,7 +40,7 @@
           <li><a class="dropdown-item" href="{% url 'shift:attendance_admin_index' %}">勤怠集計・設定</a></li>
         {% endif %}
         {% if request.user.is_staff %}
-          <li><a class="dropdown-item" href="{% url 'admin:notice_notice_add' %}">通知追加</a></li>
+          <li><a class="dropdown-item" href="{% url 'notice:manage' %}">通知管理</a></li>
           <li><a class="dropdown-item" href="{% url 'admin:index' %}">管理者画面</a></li>
         {% endif %}
       </ul>

@@ -81,6 +81,7 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 
 `Notice` のみ。`start_at`・`end_at`・`is_active` で掲示期間を制御し、
 `NoticeManager.get_notice()` が現在有効なものを返します。
+掲示する通知の追加・編集は `notice:manage`（`is_staff` 限定）から行います。
 
 ## URL 一覧
 
@@ -158,6 +159,8 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 ### その他
 
 - `/notice/` — お知らせ一覧（`notice:index`）
+- `/notice/manage/` — 通知の追加・編集（`notice:manage`。`is_staff` 限定）
+- `/notice/manage/<id>/delete/` — 通知の削除（`notice:notice_delete`。`is_staff` 限定）
 - `/forget/` — パスワードリセット（`custom_auth_forget`）
 
 ## 設計上の約束ごと
