@@ -6,8 +6,8 @@
 <div class="py-5 text-center">
     <h1 class="display-5 fw-bold">シフト管理をもっとスマートに</h1>
     <p class="lead mt-3 text-muted">
-        シフトの作成・共有・通知を一元管理。<br>
-        飲食店・小売・医療など、あらゆる職場のシフト管理を効率化します。
+        シフトの作成・共有・通知から、出退勤の記録までを一元管理。<br>
+        飲食店・小売・医療など、あらゆる職場のシフト管理・勤怠管理を効率化します。
     </p>
     <div class="mt-4 d-flex justify-content-center gap-3">
         <a href="{% url 'login' %}" class="btn btn-primary btn-lg px-4">ログイン</a>
@@ -20,7 +20,7 @@
 <!-- Features Section -->
 <div class="row g-4 py-3">
     <h2 class="text-center mb-4">主な機能</h2>
-    <div class="col-md-4">
+    <div class="col-md-6 col-lg-3">
         <div class="card h-100 shadow-sm">
             <div class="card-body text-center">
                 <i class="bi bi-calendar3 display-6 text-primary"></i>
@@ -29,7 +29,16 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-6 col-lg-3">
+        <div class="card h-100 shadow-sm">
+            <div class="card-body text-center">
+                <i class="bi bi-stopwatch display-6 text-primary"></i>
+                <h5 class="card-title mt-3">勤怠管理</h5>
+                <p class="card-text text-muted">出勤・退勤ボタンでワンタップ打刻。Excelのような一覧表から手動入力もでき、実働時間を自動集計します。</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
         <div class="card h-100 shadow-sm">
             <div class="card-body text-center">
                 <i class="bi bi-bell display-6 text-primary"></i>
@@ -38,7 +47,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-md-6 col-lg-3">
         <div class="card h-100 shadow-sm">
             <div class="card-body text-center">
                 <i class="bi bi-people display-6 text-primary"></i>
@@ -54,7 +63,7 @@
 <!-- Pricing Section -->
 <div class="py-3" id="pricing">
     <h2 class="text-center mb-2">料金プラン</h2>
-    <p class="text-center text-muted mb-4">テンプレート機能・通知機能など、すべての機能をどのプランでもご利用いただけます。</p>
+    <p class="text-center text-muted mb-4">勤怠管理・テンプレート機能・通知機能など、すべての機能をどのプランでもご利用いただけます。</p>
 
     <div class="row row-cols-1 row-cols-md-3 g-4 justify-content-center">
 
@@ -72,6 +81,7 @@
                     <ul class="list-unstyled flex-grow-1">
                         <li class="py-1 border-bottom"><i class="bi bi-people me-2 text-primary"></i>メンバー最大 <strong>10名</strong></li>
                         <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>シフト管理</li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>勤怠管理</li>
                         <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>テンプレート機能</li>
                         <li class="py-1"><i class="bi bi-check-circle me-2 text-success"></i>通知機能</li>
                     </ul>
@@ -95,6 +105,7 @@
                     <ul class="list-unstyled flex-grow-1">
                         <li class="py-1 border-bottom"><i class="bi bi-people me-2 text-primary"></i>メンバー最大 <strong>30名</strong></li>
                         <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>シフト管理</li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>勤怠管理</li>
                         <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>テンプレート機能</li>
                         <li class="py-1"><i class="bi bi-check-circle me-2 text-success"></i>通知機能</li>
                     </ul>
@@ -117,6 +128,7 @@
                     <ul class="list-unstyled flex-grow-1">
                         <li class="py-1 border-bottom"><i class="bi bi-people me-2 text-primary"></i>メンバー最大 <strong>100名</strong></li>
                         <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>シフト管理</li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>勤怠管理</li>
                         <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>テンプレート機能</li>
                         <li class="py-1"><i class="bi bi-check-circle me-2 text-success"></i>通知機能</li>
                     </ul>
@@ -139,6 +151,7 @@
                     <ul class="list-unstyled flex-grow-1">
                         <li class="py-1 border-bottom"><i class="bi bi-people me-2 text-primary"></i>メンバー最大 <strong>250名</strong></li>
                         <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>シフト管理</li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>勤怠管理</li>
                         <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>テンプレート機能</li>
                         <li class="py-1"><i class="bi bi-check-circle me-2 text-success"></i>通知機能</li>
                     </ul>
@@ -160,6 +173,7 @@
                     <ul class="list-unstyled flex-grow-1">
                         <li class="py-1 border-bottom"><i class="bi bi-people me-2 text-primary"></i>メンバー<strong>無制限</strong></li>
                         <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>シフト管理</li>
+                        <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>勤怠管理</li>
                         <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>テンプレート機能</li>
                         <li class="py-1 border-bottom"><i class="bi bi-check-circle me-2 text-success"></i>通知機能</li>
                         <li class="py-1"><i class="bi bi-check-circle me-2 text-success"></i>専任サポート・カスタマイズ</li>

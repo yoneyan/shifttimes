@@ -1,4 +1,5 @@
 from custom_auth.models import Group, UserGroup
+from shift.models import AttendanceSetting
 
 
 ACTIVE_GROUP_STATUS = 1
@@ -28,3 +29,16 @@ def shift_admin_groups(request):
         "shift_admin_groups": groups,
         "has_shift_admin_groups": bool(groups),
     }
+
+
+def attendance_groups(request):
+    """勤怠管理が有効な所属グループがあるかどうか（ナビゲーション表示用）"""
+    user = request.user
+    if not user.is_authenticated:
+        return {"has_attendance_groups": False}
+
+    settings_query = AttendanceSetting.objects.filter(is_enabled=True, group__status=ACTIVE_GROUP_STATUS)
+    if not user.is_staff:
+        settings_query = settings_query.filter(group__usergroup__user=user)
+
+    return {"has_attendance_groups": settings_query.exists()}

@@ -2,6 +2,8 @@ from django.contrib import admin
 from simple_history.admin import SimpleHistoryAdmin
 
 from shift.models import (
+    AttendanceRecord,
+    AttendanceSetting,
     DateOpeningSchedule,
     OpeningScheduleType,
     ShiftDeadline,
@@ -68,5 +70,31 @@ class ShiftEntryAdmin(SimpleHistoryAdmin):
     )
     list_display = ("id", "group", "user", "work_date", "time_slot", "status", "updated_at")
     list_filter = ("group", "status", "work_date", "time_slot")
+    search_fields = ("user__username", "group__name", "note")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(AttendanceSetting)
+class AttendanceSettingAdmin(SimpleHistoryAdmin):
+    fieldsets = (
+        (None, {"fields": ("group", "is_enabled", "allow_manual_input", "allow_clock_button")}),
+        ("audit", {"fields": ("created_at", "updated_at")}),
+    )
+    list_display = ("id", "group", "is_enabled", "allow_manual_input", "allow_clock_button", "updated_at")
+    list_filter = ("is_enabled", "allow_manual_input", "allow_clock_button")
+    search_fields = ("group__name", "group__name_jp")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(AttendanceRecord)
+class AttendanceRecordAdmin(SimpleHistoryAdmin):
+    fieldsets = (
+        (None, {"fields": ("group", "user", "work_date")}),
+        ("info", {"fields": ("start_time", "end_time", "break_minutes", "source", "note")}),
+        ("audit", {"fields": ("created_at", "updated_at")}),
+    )
+    list_display = ("id", "group", "user", "work_date", "start_time", "end_time", "break_minutes",
+                    "source", "updated_at")
+    list_filter = ("group", "source", "work_date")
     search_fields = ("user__username", "group__name", "note")
     readonly_fields = ("created_at", "updated_at")

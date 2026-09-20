@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import attendance_views, views
 
 app_name = "shift"
 urlpatterns = [
@@ -16,4 +16,12 @@ urlpatterns = [
          name="deadline_delete"),
     path("summary/", views.summary_index, name="summary_index"),
     path("summary/<int:group_id>/", views.summary, name="summary"),
+    path("attendance/", attendance_views.attendance_index, name="attendance_index"),
+    path("attendance/admin/", attendance_views.attendance_admin_index, name="attendance_admin_index"),
+    path("attendance/<int:group_id>/", attendance_views.attendance, name="attendance"),
+    path("attendance/<int:group_id>/clock/", attendance_views.attendance_clock, name="attendance_clock"),
+    path("attendance/<int:group_id>/settings/", attendance_views.attendance_settings,
+         name="attendance_settings"),
+    path("attendance/<int:group_id>/summary/", attendance_views.attendance_summary,
+         name="attendance_summary"),
 ]

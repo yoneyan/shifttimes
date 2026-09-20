@@ -36,6 +36,25 @@
   </section>
 
   <section class="mb-4">
+    <h2 class="h5 mb-3">
+      勤怠管理
+      {% if attendance_setting.is_enabled %}
+        <span class="badge text-bg-success align-middle">有効</span>
+      {% else %}
+        <span class="badge text-bg-secondary align-middle">無効</span>
+      {% endif %}
+    </h2>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-primary" href="{% url 'shift:attendance_settings' group.id %}">
+        <i class="bi bi-gear me-1"></i>勤怠設定
+      </a>
+      <a class="btn btn-outline-primary" href="{% url 'shift:attendance_summary' group.id %}">
+        <i class="bi bi-stopwatch me-1"></i>勤怠集計
+      </a>
+    </div>
+  </section>
+
+  <section class="mb-4">
     <h2 class="h5 mb-3">ユーザ登録</h2>
     <div class="d-flex flex-wrap gap-2">
       <a class="btn btn-primary" href="{% url 'custom_auth_group:register_member' group.id %}">

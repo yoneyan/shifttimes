@@ -21,6 +21,7 @@ from custom_auth.form import (
 )
 from custom_auth.models import UserGroup, User
 from custom_auth.models import TOTPDevice, UserActivateToken
+from shift.models import AttendanceSetting
 
 
 @login_required
@@ -227,6 +228,7 @@ def group_admin_home(request, group_id: int):
     context = {
         "group": user_group.group,
         "member_count": user_group.group.usergroup_set.count(),
+        "attendance_setting": AttendanceSetting.objects.filter(group=user_group.group).first(),
     }
     return render(request, "group/admin.html", context)
 

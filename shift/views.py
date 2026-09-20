@@ -17,6 +17,7 @@ from shift.forms import (
     ShiftDeadlineForm,
 )
 from shift.models import (
+    AttendanceSetting,
     DateOpeningSchedule,
     OpeningScheduleType,
     ShiftDeadline,
@@ -292,12 +293,18 @@ def index(request):
             group=group, user=request.user, work_date__gte=today, is_draft=True,
         ).count()
 
+    attendance_group_ids = set(
+        AttendanceSetting.objects.filter(group__in=groups, is_enabled=True)
+        .values_list("group_id", flat=True)
+    )
+
     group_cards = [
         {
             "group": group,
             "is_admin": group.id in admin_group_ids,
             "draft_count": draft_counts.get(group.id, 0),
             "deadline": _open_shift_period(group),
+            "attendance_enabled": group.id in attendance_group_ids,
         }
         for group in groups
     ]

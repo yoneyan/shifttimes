@@ -1,0 +1,222 @@
+{% extends 'base.html' %}
+{% block extrahead %}
+  <style>
+    .att-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .att-table {
+      border-collapse: collapse;
+      font-size: .8rem;
+      white-space: nowrap;
+    }
+
+    .att-table th,
+    .att-table td {
+      border: 1px solid #dee2e6;
+      padding: .2rem .3rem;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .att-table .col-name {
+      background: #fff;
+      left: 0;
+      max-width: 9rem;
+      min-width: 7rem;
+      position: sticky;
+      text-align: left;
+      z-index: 2;
+    }
+
+    .att-table thead .col-name {
+      background: #f8f9fa;
+      z-index: 3;
+    }
+
+    .att-table .col-total {
+      background: #fffde7;
+      font-weight: 700;
+      min-width: 3.4rem;
+    }
+
+    .att-table thead .col-total { background: #fff9c4; }
+
+    .att-table .col-date {
+      min-width: 3.1rem;
+      line-height: 1.3;
+    }
+
+    .att-table thead .col-date { background: #f8f9fa; font-weight: 700; }
+    .att-table .col-sat { color: #1565c0; }
+    .att-table .col-sun { color: #c62828; }
+    .att-table thead .col-today { background: #fff3cd; }
+    .att-table td.att-cell { cursor: pointer; }
+    .att-table td.att-cell:hover { background: #e7f1ff; }
+    .att-cell-empty { color: #ced4da; }
+    .att-cell-working { color: #198754; font-weight: 700; }
+  </style>
+{% endblock extrahead %}
+
+{% block title %}勤怠集計 | {% endblock %}
+{% block page_title %}勤怠集計{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{{ settings_url }}">
+    <i class="bi bi-gear me-1"></i>勤怠設定
+  </a>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth_group:admin_home' group.id %}">
+    <i class="bi bi-arrow-left me-1"></i>管理者ページへ
+  </a>
+{% endblock %}
+{% block content %}
+
+  {% if not setting.is_enabled %}
+    <div class="alert alert-warning d-flex align-items-center gap-2" role="alert">
+      <i class="bi bi-exclamation-triangle-fill flex-shrink-0"></i>
+      <div>
+        このグループでは勤怠管理が無効です。
+        <a href="{{ settings_url }}" class="alert-link">勤怠設定</a>から有効にしてください。
+      </div>
+    </div>
+  {% endif %}
+
+  {% include 'shift/_month_nav.html' %}
+
+  <p class="small text-muted mb-2">
+    セルをタップすると、そのメンバーの勤怠を修正できます。表示は「実働時間（休憩を除く）」です。
+  </p>
+
+  <div class="att-wrap mb-4">
+    <table class="att-table">
+      <thead>
+      <tr>
+        <th scope="col" class="col-name">メンバー</th>
+        <th scope="col" class="col-total">日数</th>
+        <th scope="col" class="col-total">実働</th>
+        {% for header in date_headers %}
+          <th scope="col"
+              class="col-date {% if header.is_sunday %}col-sun{% elif header.is_saturday %}col-sat{% endif %} {% if header.is_today %}col-today{% endif %}"
+              {% if header.opening_schedule %}title="{{ header.opening_schedule.schedule_type.name }}"{% endif %}>
+            {{ header.work_date|date:'j' }}<br>
+            <span class="fw-normal">{{ header.work_date|date:'D' }}</span>
+          </th>
+        {% endfor %}
+      </tr>
+      </thead>
+      <tbody>
+      {% for row in member_rows %}
+        <tr>
+          <th scope="row" class="col-name">{{ row.member.get_display_name }}</th>
+          <td class="col-total">{{ row.totals.worked_days }}</td>
+          <td class="col-total">{{ row.totals.total_display|default:'0:00' }}</td>
+          {% for cell in row.cells %}
+            <td class="col-date att-cell {% if cell.is_sunday %}col-sun{% elif cell.is_saturday %}col-sat{% endif %}"
+                data-user-id="{{ row.member.id }}"
+                data-member="{{ row.member.get_display_name }}"
+                data-date="{{ cell.work_date|date:'Y-m-d' }}"
+                data-label="{{ cell.work_date|date:'n月j日 (D)' }}"
+                data-start="{{ cell.record.start_time|time:'H:i' }}"
+                data-end="{{ cell.record.end_time|time:'H:i' }}"
+                data-break-minutes="{{ cell.record.break_minutes|default_if_none:'' }}"
+                data-note="{{ cell.record.note|default:'' }}"
+                {% if cell.record %}
+                title="{{ cell.record.start_time|time:'H:i'|default:'--:--' }}〜{{ cell.record.end_time|time:'H:i'|default:'--:--' }}{% if cell.record.break_minutes %} 休憩{{ cell.record.break_minutes }}分{% endif %}{% if cell.record.note %} / {{ cell.record.note }}{% endif %}"
+                {% endif %}>
+              {% if cell.record.worked_time_display %}
+                {{ cell.record.worked_time_display }}
+              {% elif cell.record.is_working %}
+                <span class="att-cell-working">●</span>
+              {% else %}
+                <span class="att-cell-empty">-</span>
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="3" class="text-muted py-4">メンバーがいません。</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ===== 管理者による勤怠修正ダイアログ ===== #}
+  <div class="modal fade" id="attendanceEditModal" tabindex="-1" aria-labelledby="attendanceEditModalLabel"
+       aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="month" value="{{ current_month_value }}">
+          <input type="hidden" name="user_id" id="attendanceEditUserId" value="">
+          <input type="hidden" name="work_date" id="attendanceEditWorkDate" value="">
+          <div class="modal-header">
+            <h5 class="modal-title" id="attendanceEditModalLabel">勤怠の修正</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-6">
+                <label class="form-label small fw-bold" for="attendanceEditStart">出勤時刻</label>
+                <input type="time" class="form-control" id="attendanceEditStart" name="start_time">
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold" for="attendanceEditEnd">退勤時刻</label>
+                <input type="time" class="form-control" id="attendanceEditEnd" name="end_time">
+                <div class="form-text">出勤より前の時刻は翌日の退勤として扱います。</div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-bold" for="attendanceEditBreak">休憩（分）</label>
+                <input type="number" class="form-control" id="attendanceEditBreak" name="break_minutes"
+                       min="0" step="5" placeholder="0">
+              </div>
+              <div class="col-12">
+                <label class="form-label small fw-bold" for="attendanceEditNote">メモ（任意）</label>
+                <input type="text" class="form-control" id="attendanceEditNote" name="note" maxlength="200">
+              </div>
+            </div>
+            <p class="form-text mb-0 mt-3">出勤・退勤の両方を空にして登録すると、その日の勤怠を削除します。</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>保存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block javascript %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const modalEl = document.getElementById("attendanceEditModal");
+      const modal = new bootstrap.Modal(modalEl);
+      const userIdInput = document.getElementById("attendanceEditUserId");
+      const workDateInput = document.getElementById("attendanceEditWorkDate");
+      const startInput = document.getElementById("attendanceEditStart");
+      const endInput = document.getElementById("attendanceEditEnd");
+      const breakInput = document.getElementById("attendanceEditBreak");
+      const noteInput = document.getElementById("attendanceEditNote");
+      const modalLabel = document.getElementById("attendanceEditModalLabel");
+
+      document.querySelectorAll("td.att-cell").forEach(function (cell) {
+        cell.addEventListener("click", function () {
+          userIdInput.value = cell.dataset.userId;
+          workDateInput.value = cell.dataset.date;
+          modalLabel.textContent = cell.dataset.member + " / " + cell.dataset.label;
+          startInput.value = cell.dataset.start || "";
+          endInput.value = cell.dataset.end || "";
+          breakInput.value = cell.dataset.breakMinutes || "";
+          noteInput.value = cell.dataset.note || "";
+          modal.show();
+        });
+      });
+    });
+  </script>
+{% endblock javascript %}

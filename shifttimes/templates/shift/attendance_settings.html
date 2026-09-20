@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block title %}勤怠設定 | {% endblock %}
+{% block page_title %}勤怠設定{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth_group:admin_home' group.id %}">
+    <i class="bi bi-arrow-left me-1"></i>管理者ページへ
+  </a>
+{% endblock %}
+{% block content %}
+
+  <form method="post" class="card mb-4">
+    {% csrf_token %}
+    <div class="card-body">
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger py-2 small" role="alert">
+          {% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="form-check form-switch mb-3">
+        {{ form.is_enabled }}
+        <label class="form-check-label fw-bold" for="{{ form.is_enabled.id_for_label }}">
+          勤怠管理を利用する
+        </label>
+        <div class="form-text">
+          無効にすると、メンバーの画面から勤怠管理のメニューが消えます。記録済みの勤怠は削除されません。
+        </div>
+      </div>
+
+      <hr>
+
+      <h2 class="h6 mb-3">入力方法</h2>
+
+      <div class="form-check form-switch mb-3">
+        {{ form.allow_manual_input }}
+        <label class="form-check-label" for="{{ form.allow_manual_input.id_for_label }}">
+          手動入力を許可する
+        </label>
+        <div class="form-text">
+          メンバーが一覧表から出勤・退勤時刻を自分で入力・修正できます。
+          無効にしても、管理者は勤怠集計の画面から修正できます。
+        </div>
+      </div>
+
+      <div class="form-check form-switch mb-3">
+        {{ form.allow_clock_button }}
+        <label class="form-check-label" for="{{ form.allow_clock_button.id_for_label }}">
+          出退勤ボタン（打刻）を許可する
+        </label>
+        <div class="form-text">
+          メンバーが「出勤」「退勤」ボタンで現在時刻を記録できます。無効にするとボタンが表示されません。
+        </div>
+      </div>
+    </div>
+    <div class="card-footer bg-white d-flex flex-wrap gap-2">
+      <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>保存</button>
+      <a class="btn btn-outline-primary" href="{{ summary_url }}">
+        <i class="bi bi-grid-3x3-gap me-1"></i>勤怠集計を見る
+      </a>
+    </div>
+  </form>
+
+  <div class="card">
+    <div class="card-body">
+      <h2 class="h6 mb-2">現在の状態</h2>
+      <ul class="list-unstyled small mb-0">
+        <li>
+          勤怠管理:
+          {% if setting.is_enabled %}
+            <span class="badge text-bg-success">有効</span>
+          {% else %}
+            <span class="badge text-bg-secondary">無効</span>
+          {% endif %}
+        </li>
+        <li>
+          手動入力:
+          {% if setting.allow_manual_input %}
+            <span class="badge text-bg-success">許可</span>
+          {% else %}
+            <span class="badge text-bg-secondary">不可</span>
+          {% endif %}
+        </li>
+        <li>
+          出退勤ボタン:
+          {% if setting.allow_clock_button %}
+            <span class="badge text-bg-success">許可</span>
+          {% else %}
+            <span class="badge text-bg-secondary">不可</span>
+          {% endif %}
+        </li>
+      </ul>
+    </div>
+  </div>
+{% endblock content %}

@@ -190,3 +190,103 @@ class ShiftDeadline(models.Model):
         return "%s: %s〜%s (期限 %s)" % (
             self.group, self.period_start, self.period_end, self.deadline_date
         )
+
+
+class AttendanceSetting(models.Model):
+    """グループごとの勤怠管理機能の有効・無効設定"""
+
+    class Meta:
+        verbose_name = "勤怠設定"
+        verbose_name_plural = "勤怠設定"
+
+    created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField("更新日", auto_now=True)
+    group = models.OneToOneField("custom_auth.Group", on_delete=models.CASCADE,
+                                 related_name="attendance_setting", verbose_name="グループ")
+    is_enabled = models.BooleanField("勤怠管理を利用する", default=False)
+    allow_manual_input = models.BooleanField("手動入力を許可", default=True)
+    allow_clock_button = models.BooleanField("出退勤ボタンを許可", default=True)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return "%s: %s" % (self.group, "有効" if self.is_enabled else "無効")
+
+
+class AttendanceRecord(models.Model):
+    """ユーザーの1日ぶんの勤怠実績（出勤・退勤・休憩）"""
+
+    class Meta:
+        ordering = ("work_date",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("group", "user", "work_date"),
+                name="attendance_record_unique_day",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("group", "work_date")),
+            models.Index(fields=("user", "work_date")),
+        ]
+        verbose_name = "勤怠実績"
+        verbose_name_plural = "勤怠実績"
+
+    MANUAL = "manual"
+    CLOCK = "clock"
+    SOURCE_CHOICES = (
+        (MANUAL, "手動入力"),
+        (CLOCK, "打刻"),
+    )
+
+    created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField("更新日", auto_now=True)
+    group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE,
+                              related_name="attendance_records", verbose_name="グループ")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                             related_name="attendance_records", verbose_name="ユーザー")
+    work_date = models.DateField("勤務日", db_index=True)
+    start_time = models.TimeField("出勤時刻", null=True, blank=True)
+    end_time = models.TimeField("退勤時刻", null=True, blank=True)
+    break_minutes = models.PositiveSmallIntegerField("休憩時間（分）", default=0)
+    note = MediumTextField("メモ", default="", blank=True)
+    source = models.CharField("入力方法", max_length=20, choices=SOURCE_CHOICES, default=MANUAL)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return "%s: %s %s %s〜%s" % (
+            self.id, self.user, self.work_date,
+            self.start_time.strftime("%H:%M") if self.start_time else "--:--",
+            self.end_time.strftime("%H:%M") if self.end_time else "--:--",
+        )
+
+    @property
+    def is_working(self):
+        """出勤済みで、まだ退勤していない状態"""
+        return bool(self.start_time and not self.end_time)
+
+    @property
+    def is_overnight(self):
+        """退勤時刻が出勤時刻より前（日をまたいだ勤務）かどうか"""
+        return bool(self.start_time and self.end_time and self.end_time < self.start_time)
+
+    @property
+    def worked_minutes(self):
+        """休憩を除いた実働時間（分）。出勤・退勤が揃っていない場合は None"""
+        if not self.start_time or not self.end_time:
+            return None
+        start = self.start_time.hour * 60 + self.start_time.minute
+        end = self.end_time.hour * 60 + self.end_time.minute
+        if end < start:  # 日をまたぐ勤務は翌日の退勤として扱う
+            end += 24 * 60
+        return max(end - start - self.break_minutes, 0)
+
+    @property
+    def worked_time_display(self):
+        """実働時間を H:MM 形式で返す"""
+        return minutes_to_hhmm(self.worked_minutes)
+
+
+def minutes_to_hhmm(minutes):
+    """分を H:MM 表記に変換する（None は空文字）"""
+    if minutes is None:
+        return ""
+    return "%d:%02d" % (minutes // 60, minutes % 60)

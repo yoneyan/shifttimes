@@ -10,6 +10,13 @@
       <i class="bi bi-pencil-square me-1"></i>シフト管理
     </a>
   </li>
+  {% if has_attendance_groups %}
+    <li class="nav-item">
+      <a class="nav-link" href="{% url 'shift:attendance_index' %}">
+        <i class="bi bi-stopwatch me-1"></i>勤怠
+      </a>
+    </li>
+  {% endif %}
   <li class="nav-item">
     <a class="nav-link" href="{% url 'notice:index' %}">
       <i class="bi bi-bell me-1"></i>お知らせ
@@ -30,6 +37,7 @@
         {% if has_shift_admin_groups %}
           <li><a class="dropdown-item" href="{% url 'shift:summary_index' %}">シフト提出状況</a></li>
           <li><a class="dropdown-item" href="{% url 'shift:schedule_index' %}">開講スケジュール設定</a></li>
+          <li><a class="dropdown-item" href="{% url 'shift:attendance_admin_index' %}">勤怠集計・設定</a></li>
         {% endif %}
         {% if request.user.is_staff %}
           <li><a class="dropdown-item" href="{% url 'admin:notice_notice_add' %}">通知追加</a></li>
