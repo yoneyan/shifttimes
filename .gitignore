@@ -1,6 +1,23 @@
-.idea/*
+# Python
+__pycache__/
+*.py[cod]
+
+# 仮想環境・ツールのキャッシュ
 venv
-*_settings.py
-db.sqlite3
 .venv/
 .ruff_cache/
+
+# ローカル設定・シークレット
+*_settings.py
+.env
+.env.*
+.claude/settings.local.json
+
+# Django
+# STATIC_ROOT（collectstatic の出力先）。ソースの shifttimes/static/ は対象外
+/static/
+*.sqlite3
+
+# エディタ・OS
+.idea/*
+.DS_Store
