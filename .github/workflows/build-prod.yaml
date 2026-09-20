@@ -10,9 +10,13 @@ on:
     - '.github/**'
     - 'files/**'
     - 'shifttimes/**'
+    - 'custom_auth/**'
+    - 'notice/**'
+    - 'shift/**'
+    - 'manage.py'
     - 'Dockerfile'
-    - 'Pipfile'
-    - 'Pipfile.lock'
+    - 'pyproject.toml'
+    - 'uv.lock'
 
 jobs:
   push_to_registry:

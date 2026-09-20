@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "django-dev",
-      "runtimeExecutable": "pipenv",
+      "runtimeExecutable": "uv",
       "runtimeArgs": ["run", "python", "manage.py", "runserver", "8000"],
       "port": 8000
     }

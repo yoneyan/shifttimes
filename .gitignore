@@ -2,3 +2,5 @@
 venv
 *_settings.py
 db.sqlite3
+.venv/
+.ruff_cache/

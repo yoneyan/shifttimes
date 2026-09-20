@@ -38,7 +38,9 @@ urlpatterns = [
 ]
 
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
-if settings.DEBUG:
+# DEBUG を settings.py 読み込み後に立てる設定モジュール（develop_settings など）では
+# debug_toolbar が INSTALLED_APPS に入らないため、両方揃っている時だけ読み込む
+if settings.DEBUG and "debug_toolbar" in settings.INSTALLED_APPS:
     import debug_toolbar
 
     urlpatterns += [path('__debug__/', include(debug_toolbar.urls))]
