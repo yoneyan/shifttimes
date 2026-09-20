@@ -44,7 +44,7 @@
   {% endfor %}
 {% endif %}
 
-{% if unpaid_groups %}
+{% if billing_enabled and unpaid_groups %}
 <div class="alert alert-warning d-flex align-items-start gap-2" role="alert">
   <i class="bi bi-exclamation-triangle-fill fs-5 mt-1"></i>
   <div>

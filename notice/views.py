@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 from django.utils import timezone
@@ -10,10 +11,13 @@ from shift.models import ShiftEntry, ShiftDeadline
 def index(request):
     notices = Notice.objects.get_notice()
 
-    unpaid_groups = [
-        ug.group for ug in request.user.usergroup_set.select_related("group").all()
-        if not ug.group.stripe_subscription_id
-    ]
+    # オンプレミスモードでは契約という概念がないので未課金の案内も出さない
+    unpaid_groups = []
+    if settings.BILLING_ENABLED:
+        unpaid_groups = [
+            ug.group for ug in request.user.usergroup_set.select_related("group").all()
+            if not ug.group.stripe_subscription_id
+        ]
 
     # 未確定（下書き）シフト希望があるグループ
     today = timezone.now().date()

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth import logout as user_logout, authenticate, login as user_login
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect
@@ -10,6 +11,9 @@ from shifttimes.form import LoginForm
 
 def index(request):
     if not request.user.is_authenticated:
+        # オンプレミスでは機能紹介も料金表も不要なので、サイト名だけの入口を出す
+        if settings.ONPREMISE_MODE:
+            return render(request, "landing_onpremise.html", {})
         return render(request, "landing.html", {})
 
     user = request.user

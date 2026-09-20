@@ -1,133 +1,273 @@
 {% extends 'base.html' %}
 {% block extrahead %}
 <style>
-  .summary-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .summary-table {
-    border-collapse: collapse;
-    font-size: .8rem;
-    white-space: nowrap;
-  }
-
-  .summary-table th,
-  .summary-table td {
-    border: 1px solid #dee2e6;
-    padding: 0;
-    text-align: center;
-    vertical-align: middle;
-  }
-
-  /* 名前列 */
-  .summary-table .col-name {
-    min-width: 6rem;
-    max-width: 8rem;
-    padding: .25rem .5rem;
-    text-align: left;
-    position: sticky;
-    left: 0;
-    background: #fff;
-    z-index: 2;
-  }
-  .summary-table thead .col-name {
-    background: #f8f9fa;
-    z-index: 3;
-  }
-
-  /* 勤務日数列 */
-  .summary-table .col-count {
-    min-width: 3rem;
-    padding: .2rem .4rem;
-    font-weight: bold;
-    background: #fffde7;
-  }
-  .summary-table thead .col-count {
-    background: #fff9c4;
-  }
-
-  /* 日付ヘッダー */
-  .summary-table .col-date {
-    min-width: 2.6rem;
-    padding: .15rem .1rem;
-    line-height: 1.3;
-  }
-  .summary-table thead tr.row-date .col-date {
-    background: #f8f9fa;
-    font-weight: bold;
-    font-size: .85rem;
-  }
-  .summary-table thead tr.row-weekday .col-date {
-    font-size: .75rem;
-    padding-bottom: .2rem;
-  }
-
-  /* 土日・休校の色 */
-  .col-sat { color: #1565c0; }
-  .col-sun { color: #c62828; }
-  .col-blocked { background: #fce4ec !important; }
-  .col-blocked-sat { background: #e3f2fd !important; }
-  .col-blocked-sun { background: #fce4ec !important; }
-
-  /* セル内スロット */
-  .slot-icons {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 2px;
-    padding: .2rem .25rem;
-    min-width: 4.5rem;
-  }
-  .slot-chip {
-    display: flex;
-    align-items: center;
-    gap: .2rem;
-    border-radius: .2rem;
-    padding: 1px 4px;
-    font-size: .68rem;
-    font-weight: bold;
-    white-space: nowrap;
-    color: #fff;
-  }
-  .slot-chip-available   { background: #198754; }
-  .slot-chip-maybe       { background: #fd7e14; }
-  .slot-chip-unavailable { background: #adb5bd; }
-  .slot-chip-empty       { background: #f1f3f5; color: #adb5bd; font-weight: normal; }
-  .slot-chip-mark { flex-shrink: 0; }
-
-  /* 未提出セル */
-  .cell-none { color: #ccc; font-size: .85rem; }
-
-  /* 開講区分バッジ（ヘッダー行） */
-  .schedule-badge {
-    display: inline-block;
-    font-size: .6rem;
-    border-radius: .2rem;
-    padding: 1px 3px;
-    color: #fff;
-    margin-top: 2px;
-  }
-  .schedule-badge-blocked { background: #dc3545; }
-  .schedule-badge-open    { background: #0dcaf0; color: #000; }
-
-  /* 凡例 */
-  .legend-bar {
+  /* ===== 集計カード ===== */
+  .summary-stats {
     display: flex;
     flex-wrap: wrap;
-    gap: .75rem;
-    font-size: .8rem;
-    align-items: center;
+    gap: .5rem;
   }
-  .legend-item {
+  .summary-stat {
+    border: 1px solid #dee2e6;
+    border-left-width: .25rem;
+    border-radius: .375rem;
+    padding: .4rem .75rem;
+    min-width: 6.5rem;
+    background: #fff;
+  }
+  .summary-stat .summary-stat-label {
+    display: block;
+    font-size: .7rem;
+    color: #6c757d;
+    line-height: 1.2;
+  }
+  .summary-stat .summary-stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .summary-stat .summary-stat-unit {
+    font-size: .7rem;
+    font-weight: 400;
+    color: #6c757d;
+  }
+  .summary-stat-done    { border-left-color: #198754; }
+  .summary-stat-partial { border-left-color: #fd7e14; }
+  .summary-stat-none    { border-left-color: #dc3545; }
+  .summary-stat-days    { border-left-color: #0d6efd; }
+
+  /* ===== 凡例 ===== */
+  .legend-card {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: .375rem;
+    padding: .5rem .75rem;
+    font-size: .78rem;
+  }
+  .legend-row {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .35rem 1rem;
+  }
+  .legend-row + .legend-row { margin-top: .4rem; }
+  .legend-item {
+    display: inline-flex;
     align-items: center;
     gap: .3rem;
   }
-  .legend-dot {
-    width: 1rem;
-    height: .8rem;
+  .legend-rownum {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    background: #495057;
+    color: #fff;
+    font-size: .65rem;
+    font-weight: 700;
+  }
+
+  /* ===== 表本体 ===== */
+  .summary-wrap {
+    overflow: auto;
+    max-height: 72vh;
+    border: 1px solid #dee2e6;
+    border-radius: .375rem;
+    -webkit-overflow-scrolling: touch;
+  }
+  .summary-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: .8rem;
+    white-space: nowrap;
+    margin: 0;
+  }
+  .summary-table th,
+  .summary-table td {
+    border-right: 1px solid #e9ecef;
+    border-bottom: 1px solid #e9ecef;
+    padding: 0;
+    text-align: center;
+    vertical-align: middle;
+    background: #fff;
+  }
+
+  /* 固定列：名前 */
+  .summary-table .col-name {
+    width: 9rem;
+    min-width: 9rem;
+    max-width: 9rem;
+    padding: .3rem .5rem;
+    text-align: left;
+    white-space: normal;
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    border-right: 1px solid #ced4da;
+  }
+  /* 固定列：勤務可能日数 */
+  .summary-table .col-count {
+    width: 4rem;
+    min-width: 4rem;
+    padding: .2rem .25rem;
+    position: sticky;
+    left: 9rem;
+    z-index: 2;
+    background: #fffdf3;
+    border-right: 2px solid #ced4da;
+  }
+  .summary-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: #f1f3f5;
+    font-weight: 700;
+  }
+  .summary-table thead .col-name,
+  .summary-table thead .col-count { z-index: 4; }
+  .summary-table thead .col-count { background: #fff3cd; }
+  .summary-table tfoot td {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    background: #f8f9fa;
+    border-top: 2px solid #ced4da;
+  }
+  .summary-table tfoot .col-name,
+  .summary-table tfoot .col-count { z-index: 4; }
+
+  /* 日付ヘッダー */
+  .summary-table .col-date {
+    width: 2.9rem;
+    min-width: 2.9rem;
+    padding: .15rem .1rem;
+    line-height: 1.25;
+  }
+  .summary-table thead .col-date .day-num {
+    font-size: .95rem;
+    font-weight: 700;
+    display: block;
+  }
+  .summary-table thead .col-date .day-month {
+    display: block;
+    font-size: .6rem;
+    color: #6c757d;
+    font-weight: 400;
+  }
+  .summary-table thead .col-date .day-wd { font-size: .7rem; }
+
+  /* 土日・入力対象外の日 */
+  .col-sat .day-num, .col-sat .day-wd { color: #1565c0; }
+  .col-sun .day-num, .col-sun .day-wd { color: #c62828; }
+  .summary-table .col-weekend { background: #fbfcfe; }
+  .summary-table .col-blocked { background: #f6f2f4; }
+  .summary-table thead .col-blocked { background: #f3e1e8; }
+  .summary-table .col-today { box-shadow: inset 2px 0 0 #0d6efd, inset -2px 0 0 #0d6efd; }
+  .summary-table thead .col-today { background: #cfe2ff; }
+
+  /* 未提出メンバーの行 */
+  .summary-table tr.row-none .col-name { background: #fff5f5; }
+  .summary-table tr.row-none .col-count { background: #fff5f5; }
+
+  /* セル内スロット */
+  .slot-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 2px;
+  }
+  .slot-chip {
+    display: block;
     border-radius: .15rem;
+    font-size: .7rem;
+    font-weight: 700;
+    line-height: 1.15rem;
+    height: 1.15rem;
+  }
+  .slot-chip-available   { background: #198754; color: #fff; }
+  .slot-chip-maybe       { background: #fd7e14; color: #fff; }
+  .slot-chip-unavailable { background: #e9ecef; color: #6c757d; box-shadow: inset 0 0 0 1px #ced4da; }
+  .slot-chip-empty       { background: #fff; color: #dee2e6; border: 1px dashed #ced4da; line-height: 1.05rem; }
+  .slot-chip-note::after {
+    content: "*";
+    font-size: .65rem;
+    vertical-align: super;
+  }
+
+  /* 入力対象外セル */
+  .cell-blocked {
+    color: #b08ea2;
+    font-size: .7rem;
+    padding: .3rem .1rem;
+  }
+
+  /* 集計値 */
+  .count-main { font-size: 1rem; font-weight: 700; display: block; line-height: 1.1; }
+  .count-sub  { font-size: .62rem; color: #6c757d; display: block; line-height: 1.1; }
+
+  /* 日別合計 */
+  .total-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 2px;
+  }
+  .total-chip {
+    display: block;
+    border-radius: .15rem;
+    font-size: .7rem;
+    font-weight: 700;
+    line-height: 1.15rem;
+    height: 1.15rem;
+    background: #e7f5ec;
+    color: #146c43;
+  }
+  .total-chip-zero { background: #f8f9fa; color: #ced4da; font-weight: 400; }
+
+  /* 提出状況バッジ */
+  .status-badge {
+    display: inline-block;
+    font-size: .62rem;
+    font-weight: 700;
+    border-radius: .2rem;
+    padding: 0 .3rem;
+    line-height: 1.1rem;
+    color: #fff;
+  }
+  .status-badge-done    { background: #198754; }
+  .status-badge-partial { background: #fd7e14; }
+  .status-badge-none    { background: #dc3545; }
+  .status-badge-na      { background: #adb5bd; }
+
+  /* 狭い画面では固定列を詰めて日付列を1つでも多く見せる */
+  @media (max-width: 576px) {
+    .summary-table .col-name {
+      width: 6.5rem;
+      min-width: 6.5rem;
+      max-width: 6.5rem;
+      padding: .25rem .35rem;
+      font-size: .75rem;
+    }
+    .summary-table .col-count {
+      width: 3.2rem;
+      min-width: 3.2rem;
+      left: 6.5rem;
+    }
+    .summary-wrap { max-height: 65vh; }
+  }
+
+  /* 開講区分バッジ（ヘッダー） */
+  .schedule-badge {
+    display: block;
+    font-size: .58rem;
+    border-radius: .15rem;
+    padding: 0 2px;
+    margin-top: 1px;
+    color: #fff;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>
 {% endblock %}
@@ -135,7 +275,10 @@
 {% block title %}シフト提出状況 | {% endblock %}
 {% block page_title %}シフト提出状況{% endblock %}
 {% block page_subtitle %}
-  <p class="text-muted small mb-0">{{ group.name_jp }} / {{ group.name }}</p>
+  <p class="text-muted small mb-0">
+    {{ group.name_jp }} / {{ group.name }}
+    ・{{ date_from|date:'Y年n月j日' }}〜{{ date_to|date:'n月j日' }}（{{ days }}日間）
+  </p>
 {% endblock %}
 {% block page_actions %}
   <a class="btn btn-outline-secondary btn-sm" href="{% url 'shift:index' %}?group={{ group.id }}">
@@ -144,144 +287,217 @@
 {% endblock %}
 {% block content %}
 
+{# ===== 期間の切り替え ===== #}
 <form method="get" class="row g-2 align-items-end mb-3">
   <div class="col-auto">
-    <label class="form-label fw-bold mb-1" for="summary-from">開始日</label>
+    <label class="form-label fw-bold mb-1 small" for="summary-from">開始日</label>
     <input class="form-control form-control-sm" id="summary-from" type="date" name="from" value="{{ date_from|date:'Y-m-d' }}">
   </div>
   <div class="col-auto">
-    <label class="form-label fw-bold mb-1" for="summary-days">日数</label>
+    <label class="form-label fw-bold mb-1 small" for="summary-days">日数</label>
     <select class="form-select form-select-sm" id="summary-days" name="days" style="width:auto">
-      <option value="7"  {% if days == 7  %}selected{% endif %}>7日</option>
-      <option value="14" {% if days == 14 %}selected{% endif %}>14日</option>
-      <option value="31" {% if days == 31 %}selected{% endif %}>31日</option>
+      {% for option in day_options %}
+        <option value="{{ option }}" {% if days == option %}selected{% endif %}>{{ option }}日</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <label class="form-label fw-bold mb-1 small" for="summary-sort">並び順</label>
+    <select class="form-select form-select-sm" id="summary-sort" name="sort" style="width:auto">
+      <option value="status" {% if sort == 'status' %}selected{% endif %}>未提出が上</option>
+      <option value="name" {% if sort == 'name' %}selected{% endif %}>名前順</option>
     </select>
   </div>
   <div class="col-auto">
     <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-search me-1"></i>表示</button>
   </div>
-  <div class="col-auto ms-auto d-flex gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="?from={{ previous_from|date:'Y-m-d' }}&days={{ days }}">
-      <i class="bi bi-chevron-left"></i>前へ
-    </a>
-    <a class="btn btn-outline-secondary btn-sm" href="?from={{ next_from|date:'Y-m-d' }}&days={{ days }}">
-      次へ<i class="bi bi-chevron-right"></i>
-    </a>
+  <div class="col-auto">
+    <div class="btn-group btn-group-sm" role="group">
+      <a class="btn btn-outline-secondary" href="?from={{ this_month_from|date:'Y-m-d' }}&amp;days={{ this_month_days }}&amp;sort={{ sort }}">今月</a>
+      <a class="btn btn-outline-secondary" href="?from={{ next_month_from|date:'Y-m-d' }}&amp;days={{ next_month_days }}&amp;sort={{ sort }}">来月</a>
+    </div>
+  </div>
+  <div class="col-auto ms-auto">
+    <div class="btn-group btn-group-sm" role="group">
+      <a class="btn btn-outline-secondary" href="?from={{ previous_from|date:'Y-m-d' }}&amp;days={{ previous_days }}&amp;sort={{ sort }}">
+        <i class="bi bi-chevron-left"></i> {% if is_whole_month %}前の月{% else %}前の{{ days }}日{% endif %}
+      </a>
+      <a class="btn btn-outline-secondary" href="?from={{ next_from|date:'Y-m-d' }}&amp;days={{ next_days }}&amp;sort={{ sort }}">
+        {% if is_whole_month %}次の月{% else %}次の{{ days }}日{% endif %} <i class="bi bi-chevron-right"></i>
+      </a>
+    </div>
   </div>
 </form>
 
-<div class="legend-bar mb-3">
-  <span class="fw-bold">凡例：</span>
-  <span class="legend-item"><span class="slot-chip slot-chip-available" style="font-size:.75rem;padding:2px 6px">○ HH:mm</span>&nbsp;勤務可能</span>
-  <span class="legend-item"><span class="slot-chip slot-chip-maybe"     style="font-size:.75rem;padding:2px 6px">△ HH:mm</span>&nbsp;要相談</span>
-  <span class="legend-item"><span class="slot-chip slot-chip-unavailable" style="font-size:.75rem;padding:2px 6px">× HH:mm</span>&nbsp;勤務不可</span>
-  <span class="legend-item"><span class="slot-chip slot-chip-empty"     style="font-size:.75rem;padding:2px 6px">- HH:mm</span>&nbsp;未回答</span>
-  <span class="text-muted small">※ HH:mm は時間帯の開始時刻</span>
+{# ===== 提出期限 ===== #}
+{% if deadline %}
+  <div class="alert {% if deadline_passed %}alert-secondary{% else %}alert-warning{% endif %} py-2 px-3 small d-flex align-items-center gap-2 mb-3">
+    <i class="bi {% if deadline_passed %}bi-lock{% else %}bi-alarm{% endif %}"></i>
+    <span>
+      提出期限：<strong>{{ deadline.deadline_date|date:'Y年n月j日' }}</strong>
+      （対象期間 {{ deadline.period_start|date:'n/j' }}〜{{ deadline.period_end|date:'n/j' }}）
+      {% if deadline_passed %}
+        <span class="text-muted">— 期限を過ぎています</span>
+      {% endif %}
+      {% if deadline.note %}<span class="text-muted">／ {{ deadline.note }}</span>{% endif %}
+    </span>
+  </div>
+{% endif %}
+
+{# ===== 集計カード ===== #}
+<div class="summary-stats mb-3">
+  <div class="summary-stat summary-stat-done">
+    <span class="summary-stat-label">提出済み</span>
+    <span class="summary-stat-value text-success">{{ stats.done }}</span>
+    <span class="summary-stat-unit">/ {{ stats.members }}人</span>
+  </div>
+  <div class="summary-stat summary-stat-partial">
+    <span class="summary-stat-label">一部のみ</span>
+    <span class="summary-stat-value text-warning">{{ stats.partial }}</span>
+    <span class="summary-stat-unit">人</span>
+  </div>
+  <div class="summary-stat summary-stat-none">
+    <span class="summary-stat-label">未提出</span>
+    <span class="summary-stat-value text-danger">{{ stats.none }}</span>
+    <span class="summary-stat-unit">人</span>
+  </div>
+  <div class="summary-stat summary-stat-days">
+    <span class="summary-stat-label">入力対象日</span>
+    <span class="summary-stat-value">{{ stats.target_days }}</span>
+    <span class="summary-stat-unit">日{% if stats.blocked_days %}（入力対象外 {{ stats.blocked_days }}日を除く）{% endif %}</span>
+  </div>
 </div>
 
 {% if not members %}
   <div class="alert alert-info">表示できるメンバーがいません。</div>
 {% elif not time_slots %}
-  <div class="alert alert-info">有効な時間帯がありません。</div>
+  <div class="alert alert-info">有効な時間帯がありません。時間帯マスタを登録してください。</div>
 {% else %}
+
+  {# ===== 凡例 ===== #}
+  <div class="legend-card mb-2">
+    <div class="legend-row">
+      <span class="fw-bold">記号</span>
+      <span class="legend-item"><span class="slot-chip slot-chip-available" style="width:1.4rem">○</span>勤務可能</span>
+      <span class="legend-item"><span class="slot-chip slot-chip-maybe" style="width:1.4rem">△</span>要相談</span>
+      <span class="legend-item"><span class="slot-chip slot-chip-unavailable" style="width:1.4rem">×</span>勤務不可</span>
+      <span class="legend-item"><span class="slot-chip slot-chip-empty" style="width:1.4rem">&nbsp;</span>未回答</span>
+      <span class="text-muted">* が付いたものはメモあり（マウスを乗せると表示）</span>
+    </div>
+    <div class="legend-row">
+      <span class="fw-bold">各セルの段</span>
+      {% for sl in slot_legend %}
+        <span class="legend-item">
+          <span class="legend-rownum">{{ sl.index }}</span>
+          {{ sl.time_range }}
+          {% if sl.name %}<span class="text-muted">{{ sl.name }}</span>{% endif %}
+        </span>
+      {% endfor %}
+    </div>
+    {% if schedule_legend %}
+      <div class="legend-row">
+        <span class="fw-bold">開講区分</span>
+        {% for item in schedule_legend %}
+          <span class="legend-item">
+            <span class="legend-rownum" style="background:{{ item.color }};border-radius:.15rem;width:.9rem;height:.9rem"></span>{{ item.name }}
+          </span>
+        {% endfor %}
+        <span class="text-muted">※ シフト入力ができない区分の日は列全体を灰色にし、セルを「—」で表示します</span>
+      </div>
+    {% endif %}
+  </div>
+
+  {# ===== 本体 ===== #}
   <div class="summary-wrap">
     <table class="summary-table">
       <thead>
-        {# 日付行 #}
-        <tr class="row-date">
-          <th class="col-name">名前</th>
-          {% for dh in date_headers %}
-            <th class="col-date
-              {% if dh.is_saturday %}col-sat{% endif %}
-              {% if dh.is_sunday %}col-sun{% endif %}
-              {% if dh.is_blocked %}col-blocked{% endif %}">
-              {{ dh.work_date|date:'j' }}
-            </th>
-          {% endfor %}
+        <tr>
+          <th class="col-name">メンバー</th>
           <th class="col-count">勤務<br>可能日</th>
-        </tr>
-        {# 曜日行 #}
-        <tr class="row-weekday">
-          <th class="col-name" style="background:#f8f9fa"></th>
           {% for dh in date_headers %}
-            <th class="col-date
-              {% if dh.is_saturday %}col-sat{% endif %}
-              {% if dh.is_sunday %}col-sun{% endif %}
-              {% if dh.is_blocked %}col-blocked{% endif %}">
-              {{ dh.work_date|date:'D'|slice:'1' }}
+            <th class="col-date{% if dh.is_saturday %} col-sat col-weekend{% endif %}{% if dh.is_sunday %} col-sun col-weekend{% endif %}{% if dh.is_blocked %} col-blocked{% endif %}{% if dh.is_today %} col-today{% endif %}"
+                title="{{ dh.work_date|date:'Y年n月j日(D)' }}{% if dh.opening_schedule %} / {{ dh.opening_schedule.schedule_type.name }}{% endif %}">
+              {% if dh.show_month %}<span class="day-month">{{ dh.work_date|date:'n月' }}</span>{% endif %}
+              <span class="day-num">{{ dh.work_date|date:'j' }}</span>
+              <span class="day-wd">{{ dh.work_date|date:'D' }}</span>
               {% if dh.opening_schedule %}
-                <br><span class="schedule-badge {% if dh.is_blocked %}schedule-badge-blocked{% else %}schedule-badge-open{% endif %}">
+                <span class="schedule-badge" style="background:{{ dh.schedule_color }}">
                   {{ dh.opening_schedule.schedule_type.name|truncatechars:3 }}
                 </span>
               {% endif %}
             </th>
           {% endfor %}
-          <th class="col-count" style="background:#fff9c4"></th>
         </tr>
       </thead>
       <tbody>
         {% for row in member_rows %}
-          <tr>
-            <td class="col-name">{{ row.member.get_display_name }}</td>
+          <tr class="row-{{ row.status }}">
+            <td class="col-name">
+              <span class="d-block text-truncate" title="{{ row.member.get_display_name }}">{{ row.member.get_display_name }}</span>
+              <span class="status-badge status-badge-{{ row.status }}"
+                    title="{{ stats.target_days }}日中 {{ row.answered_days }}日を回答済み{% if row.missing_days %}（未回答 {{ row.missing_days }}日）{% endif %}">
+                {{ row.status_label }}
+              </span>
+            </td>
+            <td class="col-count">
+              <span class="count-main">{{ row.available_days }}</span>
+              <span class="count-sub">回答 {{ row.answered_days }}/{{ stats.target_days }}</span>
+            </td>
             {% for dc in row.date_cells %}
-              <td class="col-date{% if dc.is_saturday %} col-sat{% endif %}{% if dc.is_sunday %} col-sun{% endif %}{% if dc.is_blocked %} col-blocked{% endif %}">
-                <div class="slot-icons">
-                  {% for sc in dc.slot_cells %}
-                    {% if sc.entry %}
-                      {% if sc.entry.status == 'available' %}
-                        <span class="slot-chip slot-chip-available" title="{% if sc.entry.note %}{{ sc.entry.note }}{% endif %}">
-                          <span class="slot-chip-mark">○</span>{{ sc.time_slot.start_time|time:"H:i" }}
-                        </span>
-                      {% elif sc.entry.status == 'maybe' %}
-                        <span class="slot-chip slot-chip-maybe" title="{% if sc.entry.note %}{{ sc.entry.note }}{% endif %}">
-                          <span class="slot-chip-mark">△</span>{{ sc.time_slot.start_time|time:"H:i" }}
-                        </span>
+              <td class="col-date{% if dc.is_saturday %} col-weekend{% endif %}{% if dc.is_sunday %} col-weekend{% endif %}{% if dc.is_blocked %} col-blocked{% endif %}{% if dc.is_today %} col-today{% endif %}">
+                {% if dc.is_blocked %}
+                  <div class="cell-blocked">—</div>
+                {% else %}
+                  <div class="slot-stack">
+                    {% for sc in dc.slot_cells %}
+                      {% if sc.entry %}
+                        {% if sc.entry.status == 'available' %}
+                          <span class="slot-chip slot-chip-available{% if sc.entry.note %} slot-chip-note{% endif %}"
+                                title="{{ sc.time_slot.start_time|time:'H:i' }}〜{{ sc.time_slot.end_time|time:'H:i' }} 勤務可能{% if sc.entry.note %} / {{ sc.entry.note }}{% endif %}">○</span>
+                        {% elif sc.entry.status == 'maybe' %}
+                          <span class="slot-chip slot-chip-maybe{% if sc.entry.note %} slot-chip-note{% endif %}"
+                                title="{{ sc.time_slot.start_time|time:'H:i' }}〜{{ sc.time_slot.end_time|time:'H:i' }} 要相談{% if sc.entry.note %} / {{ sc.entry.note }}{% endif %}">△</span>
+                        {% else %}
+                          <span class="slot-chip slot-chip-unavailable{% if sc.entry.note %} slot-chip-note{% endif %}"
+                                title="{{ sc.time_slot.start_time|time:'H:i' }}〜{{ sc.time_slot.end_time|time:'H:i' }} 勤務不可{% if sc.entry.note %} / {{ sc.entry.note }}{% endif %}">×</span>
+                        {% endif %}
                       {% else %}
-                        <span class="slot-chip slot-chip-unavailable" title="{% if sc.entry.note %}{{ sc.entry.note }}{% endif %}">
-                          <span class="slot-chip-mark">×</span>{{ sc.time_slot.start_time|time:"H:i" }}
-                        </span>
+                        <span class="slot-chip slot-chip-empty"
+                              title="{{ sc.time_slot.start_time|time:'H:i' }}〜{{ sc.time_slot.end_time|time:'H:i' }} 未回答">&nbsp;</span>
                       {% endif %}
-                    {% else %}
-                      <span class="slot-chip slot-chip-empty">
-                        <span class="slot-chip-mark">-</span>{{ sc.time_slot.start_time|time:"H:i" }}
-                      </span>
-                    {% endif %}
-                  {% endfor %}
-                </div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
               </td>
             {% endfor %}
-            <td class="col-count">{{ row.available_days }}</td>
           </tr>
         {% endfor %}
       </tbody>
+      <tfoot>
+        <tr>
+          <td class="col-name fw-bold">日別 勤務可能人数</td>
+          <td class="col-count"></td>
+          {% for dt in day_totals %}
+            <td class="col-date{% if dt.is_saturday or dt.is_sunday %} col-weekend{% endif %}{% if dt.is_blocked %} col-blocked{% endif %}{% if dt.is_today %} col-today{% endif %}">
+              {% if dt.is_blocked %}
+                <div class="cell-blocked">—</div>
+              {% else %}
+                <div class="total-stack">
+                  {% for sct in dt.slot_counts %}
+                    <span class="total-chip{% if not sct.available %} total-chip-zero{% endif %}"
+                          title="{{ dt.work_date|date:'n/j' }} {{ sct.time_slot.start_time|time:'H:i' }}〜{{ sct.time_slot.end_time|time:'H:i' }} / 勤務可能 {{ sct.available }}人・要相談 {{ sct.maybe }}人">{{ sct.available }}</span>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      </tfoot>
     </table>
   </div>
-
-  {# 時間帯凡例テーブル #}
-  {% if time_slots %}
-    <div class="mt-4">
-      <h2 class="h6 mb-2">時間帯一覧</h2>
-      <div class="table-responsive">
-        <table class="table table-sm table-bordered" style="font-size:.8rem;max-width:40rem">
-          <thead class="table-light">
-            <tr>
-              <th>時間帯名</th>
-              <th>開始</th>
-              <th>終了</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for ts in time_slots %}
-              <tr>
-                <td>{{ ts.name }}</td>
-                <td>{{ ts.start_time|time:'H:i' }}</td>
-                <td>{{ ts.end_time|time:'H:i' }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  {% endif %}
+  <p class="text-muted small mt-2 mb-0">
+    <i class="bi bi-info-circle me-1"></i>
+    下書きのまま提出されていないシフト希望は集計に含まれません。「勤務可能日」は入力対象日（シフト入力ができない区分の日を除く）のうち、いずれかの時間帯に○が付いた日数です。
+  </p>
 {% endif %}
 {% endblock content %}

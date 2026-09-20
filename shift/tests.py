@@ -477,6 +477,123 @@ class ShiftViewTests(TestCase):
         self.assertEqual(member_response.status_code, 403)
         self.assertEqual(admin_response.status_code, 200)
 
+    def test_summary_excludes_drafts_from_submission_status(self):
+        """下書きのまま提出されていない希望は「提出済み」に数えない"""
+        ShiftEntry.objects.create(
+            group=self.group,
+            user=self.user,
+            work_date=date(2026, 6, 1),
+            time_slot=self.time_slot,
+            status=ShiftEntry.AVAILABLE,
+            is_draft=True,
+        )
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(
+            reverse("shift:summary", args=[self.group.id]),
+            {"from": "2026-06-01", "days": "1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = self._summary_row(response, self.user)
+        self.assertEqual(row["answered_days"], 0)
+        self.assertEqual(row["available_days"], 0)
+        self.assertEqual(row["status"], "none")
+        self.assertEqual(response.context["stats"]["none"], 2)
+
+    def test_summary_counts_submitted_entries_and_daily_totals(self):
+        ShiftEntry.objects.create(
+            group=self.group,
+            user=self.user,
+            work_date=date(2026, 6, 1),
+            time_slot=self.time_slot,
+            status=ShiftEntry.AVAILABLE,
+        )
+        ShiftEntry.objects.create(
+            group=self.group,
+            user=self.admin_user,
+            work_date=date(2026, 6, 1),
+            time_slot=self.time_slot,
+            status=ShiftEntry.MAYBE,
+        )
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(
+            reverse("shift:summary", args=[self.group.id]),
+            {"from": "2026-06-01", "days": "1"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["stats"]["done"], 2)
+        self.assertEqual(response.context["stats"]["target_days"], 1)
+        self.assertEqual(self._summary_row(response, self.user)["available_days"], 1)
+        # 要相談は「勤務可能日」には数えない
+        self.assertEqual(self._summary_row(response, self.admin_user)["available_days"], 0)
+
+        slot_counts = response.context["day_totals"][0]["slot_counts"][0]
+        self.assertEqual(slot_counts["available"], 1)
+        self.assertEqual(slot_counts["maybe"], 1)
+
+    def test_summary_excludes_blocked_days_from_target_days(self):
+        blocked_type = OpeningScheduleType.objects.create(
+            group=self.group, name="休校", blocks_shift_input=True,
+        )
+        DateOpeningSchedule.objects.create(
+            group=self.group, work_date=date(2026, 6, 2), schedule_type=blocked_type,
+        )
+        ShiftEntry.objects.create(
+            group=self.group,
+            user=self.user,
+            work_date=date(2026, 6, 1),
+            time_slot=self.time_slot,
+            status=ShiftEntry.AVAILABLE,
+        )
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(
+            reverse("shift:summary", args=[self.group.id]),
+            {"from": "2026-06-01", "days": "2"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["stats"]["target_days"], 1)
+        self.assertEqual(response.context["stats"]["blocked_days"], 1)
+        self.assertEqual(self._summary_row(response, self.user)["status"], "done")
+
+    def test_summary_defaults_to_whole_month_of_start_date(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(
+            reverse("shift:summary", args=[self.group.id]), {"from": "2026-06-01"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["days"], 30)
+        self.assertEqual(response.context["date_to"], date(2026, 6, 30))
+        # 暦月ぴったりの期間なら前後の移動も暦月単位
+        self.assertTrue(response.context["is_whole_month"])
+        self.assertEqual(response.context["next_from"], date(2026, 7, 1))
+        self.assertEqual(response.context["next_days"], 31)
+
+    def test_summary_shows_matching_deadline(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(
+            reverse("shift:summary", args=[self.group.id]),
+            {"from": "2026-06-01", "days": "7"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["deadline"], self.deadline)
+        self.assertFalse(response.context["deadline_passed"])
+
+    @staticmethod
+    def _summary_row(response, user):
+        for row in response.context["member_rows"]:
+            if row["member"].id == user.id:
+                return row
+        raise AssertionError("member_rows に %s がいません" % user.username)
+
 
 class AttendanceTests(TestCase):
     """勤怠管理（手動入力・打刻・管理者による有効化）"""

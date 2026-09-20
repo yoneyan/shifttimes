@@ -23,9 +23,9 @@
         メンバー数: {{ member_count }}{% if max_members %} / {{ max_members }}{% endif %}
       </span>
       <span class="badge text-bg-light border">
-        プラン: {{ current_plan.name }}{% if is_free_granted %}（無償付与）{% endif %}
+        プラン: {{ current_plan.name }}{% if billing_enabled and is_free_granted %}（無償付与）{% endif %}
       </span>
-      {% if not can_add_member %}
+      {% if billing_enabled and not can_add_member %}
         <a class="small link-danger" href="{% url 'custom_auth_group:billing' group.id %}">
           上限に達しています。プランを確認する
         </a>
@@ -88,9 +88,11 @@
       <a class="btn btn-outline-secondary" href="{% url 'custom_auth_group:permission' group.id %}">
         <i class="bi bi-people me-1"></i>権限設定
       </a>
-      <a class="btn btn-outline-warning" href="{% url 'custom_auth_group:billing' group.id %}">
-        <i class="bi bi-credit-card me-1"></i>請求管理
-      </a>
+      {% if billing_enabled %}
+        <a class="btn btn-outline-warning" href="{% url 'custom_auth_group:billing' group.id %}">
+          <i class="bi bi-credit-card me-1"></i>請求管理
+        </a>
+      {% endif %}
     </div>
   </section>
 

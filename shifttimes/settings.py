@@ -28,12 +28,18 @@ SECRET_KEY = os.getenv("SECRET_KEY",
 DEBUG = os.environ.get("DEBUG", "false").lower() == "true"
 ADMIN_MODE = os.environ.get("ADMIN_MODE", "false").lower() == "true"
 
+# オンプレミスモード。自前で1組織向けに運用する構成を想定し、
+# 課金(Stripe)まわりを丸ごと無効化してトップページをサイト名だけの表示にする
+ONPREMISE_MODE = os.environ.get("ONPREMISE_MODE", "false").lower() == "true"
+
 
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(" ")
 CSRF_TRUSTED_ORIGINS = os.environ.get("CSRF_TRUSTED_ORIGINS", "http://localhost:8000").split(" ")
 
-SITE_TITLE = "シフト管理システム"
-SITE_HEADER = "シフト管理システム"
+# サイト名。オンプレミスモードではトップページの表示名にも使う
+SITE_NAME = os.environ.get("SITE_NAME", "シフト管理システム")
+SITE_TITLE = SITE_NAME
+SITE_HEADER = SITE_NAME
 
 # Application definition
 
@@ -78,6 +84,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'shifttimes.context_processors.site',
                 'shift.context_processors.shift_admin_groups',
                 'shift.context_processors.attendance_groups',
             ],
@@ -206,6 +213,19 @@ UNLIMITED_PLAN = {
 
 # 問い合わせ先（Enterprise プランの導線）
 CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "contact@example.com")
+
+# 課金機能が有効か。オンプレミスモードでは請求画面・Webhook・プラン上限をすべて止める
+BILLING_ENABLED = not ONPREMISE_MODE
+
+if ONPREMISE_MODE:
+    # オンプレミスでの運用は Enterprise プランの契約形態として扱う。
+    # 全グループに最初から Enterprise 相当（人数無制限）を適用する
+    FREE_PLAN = dict(UNLIMITED_PLAN)
+    STRIPE_PLANS = {}
+    # キーが残っていると Stripe API を叩ける状態になってしまうため明示的に空にする
+    STRIPE_SECRET_KEY = ""
+    STRIPE_PUBLISHABLE_KEY = ""
+    STRIPE_WEBHOOK_SECRET = ""
 
 # 認証アプリに表示されるサービス名（TOTP の issuer）
 APP_NAME = os.environ.get("APP_NAME", "ShiftTimes")

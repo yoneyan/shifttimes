@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.urls import path
 
 from . import views
@@ -14,11 +15,17 @@ urlpatterns = [
     path("<int:group_id>/admin/", views.group_admin_home, name="admin_home"),
     path("<int:group_id>/register/", views.register_member, name="register_member"),
     path("<int:group_id>/register-admin/", views.register_admin, name="register_admin"),
-    path("<int:group_id>/billing/", billing_views.billing, name="billing"),
-    path("<int:group_id>/billing/checkout/", billing_views.create_checkout_session, name="billing_checkout"),
-    path("<int:group_id>/billing/success/", billing_views.billing_success, name="billing_success"),
-    path("<int:group_id>/billing/change/", billing_views.change_plan, name="billing_change_plan"),
-    path("<int:group_id>/billing/cancel/", billing_views.cancel_subscription, name="billing_cancel"),
-    path("<int:group_id>/billing/resume/", billing_views.resume_subscription, name="billing_resume"),
-    path("<int:group_id>/billing/portal/", billing_views.customer_portal, name="billing_portal"),
 ]
+
+# オンプレミスモードでは請求まわりの URL を一切生やさない。
+# テンプレート側も billing_enabled で出し分けているので reverse されることはない
+if settings.BILLING_ENABLED:
+    urlpatterns += [
+        path("<int:group_id>/billing/", billing_views.billing, name="billing"),
+        path("<int:group_id>/billing/checkout/", billing_views.create_checkout_session, name="billing_checkout"),
+        path("<int:group_id>/billing/success/", billing_views.billing_success, name="billing_success"),
+        path("<int:group_id>/billing/change/", billing_views.change_plan, name="billing_change_plan"),
+        path("<int:group_id>/billing/cancel/", billing_views.cancel_subscription, name="billing_cancel"),
+        path("<int:group_id>/billing/resume/", billing_views.resume_subscription, name="billing_resume"),
+        path("<int:group_id>/billing/portal/", billing_views.customer_portal, name="billing_portal"),
+    ]

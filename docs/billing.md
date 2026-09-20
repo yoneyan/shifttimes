@@ -4,6 +4,11 @@
 プランによって変わるのは **グループに所属できるメンバー数の上限だけ** で、
 シフト・勤怠・通知などの機能はどのプランでも同じように使えます。
 
+> `ONPREMISE_MODE=true` のときはこのドキュメントの内容はすべて無効です。
+> 全グループが Enterprise プラン扱い（人数無制限）になり、
+> 請求画面と Webhook の URL は登録されません。
+> 詳細は [onpremise.md](onpremise.md) を参照してください。
+
 - 実装: [`custom_auth/billing_views.py`](../custom_auth/billing_views.py)
 - プラン定義: [`shifttimes/settings.py`](../shifttimes/settings.py)
 - 画面: [`shifttimes/templates/group/billing.html`](../shifttimes/templates/group/billing.html)
@@ -17,7 +22,7 @@
 | Standard | ¥1,980 | 30 | 10 | 既定のおすすめプラン |
 | Pro 1 | ¥4,980 | 100 | 20 | |
 | Pro 2 | ¥9,980 | 250 | 30 | |
-| Enterprise | 個別 | 無制限 | 99 | Stripe では販売せず、無償付与で `unlimited` を指定して実現する |
+| Enterprise | 個別 | 無制限 | 99 | Stripe では販売せず、無償付与で `unlimited` を指定するか、[オンプレミス](onpremise.md)で実現する |
 
 `rank` はプランの上下比較に使う数値です。アップグレードかダウングレードかの判定、
 および「無償付与」と「有料契約」を併用している場合にどちらを適用するかの判定に使います。

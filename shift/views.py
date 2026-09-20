@@ -644,7 +644,7 @@ def entry_table(request, group_id):
 
 @login_required
 def shift_confirm(request, group_id):
-    """グループの下書きシフト希望を一括確定する"""
+    """ログイン中のユーザ自身の下書きシフト希望を一括確定する（他メンバーのぶんは対象外）"""
     group = _get_group_for_user(request, group_id)
     today = _today()
 
@@ -925,33 +925,44 @@ def deadline_delete(request, group_id, deadline_id):
 
 @login_required
 def summary(request, group_id):
-    """グループ管理者向けのシフト希望サマリ"""
+    """グループ管理者向けのシフト希望サマリ（提出状況）"""
     group = _get_group_for_user(request, group_id, require_admin=True)
 
-    # デフォルトは当月1日〜末日
+    # デフォルトは当月1日から月末まで
     today = _today()
-    default_from = today.replace(day=1)
-    date_from = _parse_date_or_default(request.GET.get("from", ""), default_from)
+    this_month_from, this_month_to = _month_bounds(date_type(today.year, today.month, 1))
+    next_month_from, next_month_to = _next_month_range(today)
+
+    date_from = _parse_date_or_default(request.GET.get("from", ""), this_month_from)
     try:
-        days = int(request.GET.get("days", "31"))
+        days = int(request.GET.get("days", ""))
     except ValueError:
-        days = 31
+        days = 0
+    if days <= 0:
+        # 日数未指定なら開始日の属する月の末日までを既定にする
+        _, month_end = _month_bounds(date_type(date_from.year, date_from.month, 1))
+        days = (month_end - date_from).days + 1
     days = min(max(days, 1), 31)
     date_to = date_from + timedelta(days=days - 1)
 
-    members = [
-        membership.user
-        for membership in (
-            UserGroup.objects.filter(group=group, user__is_active=True)
-            .select_related("user")
-            .order_by("user__username")
-        )
-    ]
+    members = sorted(
+        (
+            membership.user
+            for membership in (
+                UserGroup.objects.filter(group=group, user__is_active=True)
+                .select_related("user")
+            )
+        ),
+        key=lambda user: (user.get_display_name(), user.username),
+    )
     time_slots = list(TimeSlot.objects.filter(is_active=True).order_by("start_time"))
+
+    # 下書きは「未提出」なので提出状況には含めない
     entries = ShiftEntry.objects.filter(
         group=group,
         work_date__gte=date_from,
         work_date__lte=date_to,
+        is_draft=False,
     ).select_related("user", "time_slot")
     # entry_map[(user_id, work_date, time_slot_id)] = entry
     entry_map = {
@@ -964,6 +975,7 @@ def summary(request, group_id):
 
     # 日付ヘッダー情報
     date_headers = []
+    previous_month = None
     for work_date in dates:
         sched = opening_schedule_by_date.get(work_date)
         date_headers.append({
@@ -971,15 +983,30 @@ def summary(request, group_id):
             "weekday": work_date.weekday(),  # 0=月 … 5=土 6=日
             "is_saturday": work_date.weekday() == 5,
             "is_sunday": work_date.weekday() == 6,
+            "is_today": work_date == today,
+            "show_month": work_date.month != previous_month,
             "opening_schedule": sched,
+            "schedule_color": _schedule_type_color(sched.schedule_type) if sched else "",
             "is_blocked": sched is not None and sched.schedule_type.blocks_shift_input,
         })
+        previous_month = work_date.month
+
+    # 入力対象日（休校などシフト入力できない日を除く）
+    target_days = sum(0 if dh["is_blocked"] else 1 for dh in date_headers)
+
+    # 日付×時間帯ごとの「勤務可能」人数
+    day_slot_counts = {
+        (dh["work_date"], ts.id): {"available": 0, "maybe": 0}
+        for dh in date_headers
+        for ts in time_slots
+    }
 
     # メンバー行
     member_rows = []
     for member in members:
         date_cells = []
         available_days = 0
+        answered_days = 0
         for dh in date_headers:
             work_date = dh["work_date"]
             slot_cells = []
@@ -990,34 +1017,149 @@ def summary(request, group_id):
                 slot_cells.append({"time_slot": ts, "entry": entry})
                 if entry:
                     has_any = True
-                    if entry.status == "available":
+                    if entry.status == ShiftEntry.AVAILABLE:
                         has_available = True
-            if has_available:
-                available_days += 1
+                    if not dh["is_blocked"] and entry.status in (ShiftEntry.AVAILABLE, ShiftEntry.MAYBE):
+                        counts = day_slot_counts[(work_date, ts.id)]
+                        counts["available" if entry.status == ShiftEntry.AVAILABLE else "maybe"] += 1
+            if not dh["is_blocked"]:
+                if has_available:
+                    available_days += 1
+                if has_any:
+                    answered_days += 1
             date_cells.append({
                 "work_date": work_date,
                 "is_saturday": dh["is_saturday"],
                 "is_sunday": dh["is_sunday"],
                 "is_blocked": dh["is_blocked"],
+                "is_today": dh["is_today"],
                 "slot_cells": slot_cells,
                 "has_any": has_any,
             })
+
+        if not target_days:
+            status = "na"
+            status_label = "対象日なし"
+        elif answered_days >= target_days:
+            status = "done"
+            status_label = "提出済"
+        elif answered_days:
+            status = "partial"
+            status_label = "一部"
+        else:
+            status = "none"
+            status_label = "未提出"
+
         member_rows.append({
             "member": member,
             "date_cells": date_cells,
             "available_days": available_days,
+            "answered_days": answered_days,
+            "missing_days": max(target_days - answered_days, 0),
+            "status": status,
+            "status_label": status_label,
         })
+
+    # 並び順（既定は未提出の人を上に出して、声をかける相手が分かるようにする）
+    sort = "name" if request.GET.get("sort", "") == "name" else "status"
+    if sort == "status":
+        status_order = {"none": 0, "partial": 1, "done": 2, "na": 3}
+        member_rows.sort(
+            key=lambda row: (
+                status_order.get(row["status"], 9),
+                row["member"].get_display_name(),
+                row["member"].username,
+            )
+        )
+
+    # 日別の合計行
+    day_totals = []
+    for dh in date_headers:
+        day_totals.append({
+            "work_date": dh["work_date"],
+            "is_saturday": dh["is_saturday"],
+            "is_sunday": dh["is_sunday"],
+            "is_blocked": dh["is_blocked"],
+            "is_today": dh["is_today"],
+            "slot_counts": [
+                {
+                    "time_slot": ts,
+                    "available": day_slot_counts[(dh["work_date"], ts.id)]["available"],
+                    "maybe": day_slot_counts[(dh["work_date"], ts.id)]["maybe"],
+                }
+                for ts in time_slots
+            ],
+        })
+
+    slot_legend = []
+    for index, ts in enumerate(time_slots, start=1):
+        time_range = "%s〜%s" % (ts.start_time.strftime("%H:%M"), ts.end_time.strftime("%H:%M"))
+        normalized_name = ts.name.replace("-", "〜").replace("–", "〜").replace("~", "〜").strip()
+        slot_legend.append({
+            "index": index,
+            "time_slot": ts,
+            "time_range": time_range,
+            "name": "" if normalized_name == time_range else ts.name,
+        })
+
+    stats = {
+        "members": len(member_rows),
+        "done": sum(1 for row in member_rows if row["status"] == "done"),
+        "partial": sum(1 for row in member_rows if row["status"] == "partial"),
+        "none": sum(1 for row in member_rows if row["status"] == "none"),
+        "target_days": target_days,
+        "blocked_days": days - target_days,
+    }
+
+    # 期間が暦月ぴったりのときは、前後も暦月単位で移動する（月末が欠けないように）
+    month_first = date_type(date_from.year, date_from.month, 1)
+    _, month_last = _month_bounds(month_first)
+    is_whole_month = date_from == month_first and date_to == month_last
+    if is_whole_month:
+        previous_from, previous_to = _month_bounds(_add_month(month_first, -1))
+        next_from, next_to = _month_bounds(_add_month(month_first, 1))
+        previous_days = (previous_to - previous_from).days + 1
+        next_days = (next_to - next_from).days + 1
+    else:
+        previous_from = date_from - timedelta(days=days)
+        next_from = date_from + timedelta(days=days)
+        previous_days = next_days = days
+
+    # 対象期間に重なる提出期限
+    deadline = (
+        ShiftDeadline.objects.filter(
+            group=group, period_start__lte=date_to, period_end__gte=date_from,
+        )
+        .order_by("deadline_date")
+        .first()
+    )
 
     context = {
         "group": group,
         "members": members,
         "time_slots": time_slots,
+        "slot_legend": slot_legend,
         "date_headers": date_headers,
         "member_rows": member_rows,
+        "day_totals": day_totals,
+        "stats": stats,
+        "deadline": deadline,
+        "deadline_passed": deadline is not None and deadline.deadline_date < today,
+        "schedule_legend": _schedule_legend(group),
+        "today": today,
         "date_from": date_from,
         "date_to": date_to,
         "days": days,
-        "previous_from": date_from - timedelta(days=days),
-        "next_from": date_from + timedelta(days=days),
+        "day_options": sorted({7, 14, 31, days}),
+        "sort": sort,
+        "previous_from": previous_from,
+        "previous_days": previous_days,
+        "next_from": next_from,
+        "next_days": next_days,
+        "is_whole_month": is_whole_month,
+        "this_month_from": this_month_from,
+        "this_month_days": (this_month_to - this_month_from).days + 1,
+        "next_month_from": next_month_from,
+        "next_month_days": (next_month_to - next_month_from).days + 1,
     }
     return render(request, "shift/summary.html", context)

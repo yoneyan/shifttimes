@@ -104,6 +104,8 @@ uv run ruff check .
 | `SECRET_KEY` | 開発用の固定値 | Django の秘密鍵。**本番では必ず変更する** |
 | `DEBUG` | `false` | `true` でデバッグモード（debug_toolbar が有効になる） |
 | `ADMIN_MODE` | `false` | 管理者向け表示の切り替え |
+| `ONPREMISE_MODE` | `false` | `true` で[オンプレミスモード](docs/onpremise.md)（Enterprise プラン扱い・課金機能を無効化し、トップページをサイト名だけにする） |
+| `SITE_NAME` | `シフト管理システム` | ヘッダー・フッター・トップページに出すサイト名 |
 | `ALLOWED_HOSTS` | `*` | 空白区切り |
 | `CSRF_TRUSTED_ORIGINS` | `http://localhost:8000` | 空白区切り |
 | `SITE_URL` | `http://localhost:8000` | Stripe のリダイレクト先などに使う絶対 URL |
@@ -145,6 +147,7 @@ uv run ruff check .
 | `FREE_PLAN_MAX_MEMBERS` | `10` | 無料プランのメンバー数上限 |
 
 詳細は [docs/billing.md](docs/billing.md) を参照してください。
+`ONPREMISE_MODE=true` のときは Stripe 関連の環境変数はすべて無視されます。
 
 ## デプロイ
 
@@ -167,6 +170,7 @@ docker run -p 8010:8010 --env-file .env shifttimes
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | アプリ構成、モデル、URL 一覧、設計上の約束ごと |
 | [docs/billing.md](docs/billing.md) | Stripe の設定手順、Webhook、無償付与の運用、障害時の挙動 |
+| [docs/onpremise.md](docs/onpremise.md) | オンプレミスモード（課金なしの自前運用）の設定と挙動 |
 | [docs/user-guide.md](docs/user-guide.md) | グループ管理者・メンバー向けの操作手順 |
 
 ## ライセンス

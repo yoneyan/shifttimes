@@ -91,8 +91,10 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 | `/login/` | `login` | ログイン |
 | `/logout/` | `logout` | ログアウト |
 | `/activate/<uuid>/` | `activate_user` | アカウント有効化 |
-| `/stripe/webhook/` | `stripe_webhook` | Stripe Webhook（CSRF 免除・POST のみ） |
+| `/stripe/webhook/` | `stripe_webhook` | Stripe Webhook（CSRF 免除・POST のみ）※1 |
 | `/admin/` | | Django 管理画面 |
+
+※1 `ONPREMISE_MODE=true` では登録されません（[onpremise.md](onpremise.md)）。
 
 ### プロフィール（`/profile/`, `custom_auth`）
 
@@ -125,6 +127,10 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 | `<id>/billing/cancel/` | `billing_cancel` | 管理者・POST |
 | `<id>/billing/resume/` | `billing_resume` | 管理者・POST |
 | `<id>/billing/portal/` | `billing_portal` | 管理者・POST |
+
+`billing` で始まる URL は `ONPREMISE_MODE=true` では登録されません。
+テンプレートから参照するときは `billing_enabled` で囲んでください
+（[onpremise.md](onpremise.md)）。
 
 ### シフト・勤怠（`/shift/`, `shift`）
 
@@ -168,6 +174,13 @@ if not user_group or not user_group.is_admin:
 ```
 
 課金まわりは `billing_views._get_admin_group()` にこの処理をまとめています。
+
+### 動作モードの出し分け
+
+`ONPREMISE_MODE` による出し分けは `settings.BILLING_ENABLED` に集約しています。
+テンプレートでは `shifttimes.context_processors.site` が渡す
+`billing_enabled` / `onpremise_mode` / `site_name` を使います。
+`ONPREMISE_MODE` を直接見るのは `settings.py` とトップページの分岐だけです。
 
 ### タイムゾーン
 

@@ -33,9 +33,12 @@ urlpatterns = [
     path("activate/<uuid:activate_token>/", activate_user, name="activate_user"),
     path("profile/", include("custom_auth.urls")),
     path("group/", include("custom_auth.group_urls")),
-    path("stripe/webhook/", stripe_webhook, name="stripe_webhook"),
     path('admin/', admin.site.urls),
 ]
+
+# オンプレミスモードでは課金機能ごと無効になるので Webhook も受け付けない
+if settings.BILLING_ENABLED:
+    urlpatterns += [path("stripe/webhook/", stripe_webhook, name="stripe_webhook")]
 
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 # DEBUG を settings.py 読み込み後に立てる設定モジュール（develop_settings など）では

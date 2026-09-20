@@ -1,5 +1,5 @@
 import datetime
-from unittest import mock
+from unittest import mock, skipUnless
 
 import stripe
 from django.conf import settings
@@ -119,6 +119,7 @@ class GroupPermissionViewTests(TestCase):
         self.assertFalse(self.member_group.is_admin)
 
 
+@skipUnless(settings.BILLING_ENABLED, "ONPREMISE_MODE では課金機能が無効なため対象外")
 class PlanResolutionTests(TestCase):
     """無償付与と Stripe 契約から、実際に適用されるプランが決まることを確認する。"""
 
@@ -181,6 +182,7 @@ class PlanResolutionTests(TestCase):
         self.assertEqual(self.group.plan_key, "unlimited")
 
 
+@skipUnless(settings.BILLING_ENABLED, "ONPREMISE_MODE では課金機能が無効なため対象外")
 class MemberLimitTests(TestCase):
     """プランの人数上限がメンバー登録時に効くことを確認する。"""
 
@@ -285,6 +287,7 @@ def fake_subscription(status="active", price_id="price_standard", cancel_at_peri
     }
 
 
+@skipUnless(settings.BILLING_ENABLED, "ONPREMISE_MODE では課金機能が無効なため対象外")
 @override_settings(STRIPE_PLANS=TEST_PLANS, STRIPE_SECRET_KEY="sk_test_dummy")
 class SubscriptionSyncTests(TestCase):
     """Stripe のレスポンスを Group にキャッシュする処理。"""
@@ -346,6 +349,7 @@ class SubscriptionSyncTests(TestCase):
 
 @override_settings(STRIPE_PLANS=TEST_PLANS, STRIPE_SECRET_KEY="sk_test_dummy",
                    SITE_URL="http://testserver")
+@skipUnless(settings.BILLING_ENABLED, "ONPREMISE_MODE では課金機能が無効なため対象外")
 class BillingViewTests(TestCase):
     def setUp(self):
         user_model = get_user_model()
@@ -542,6 +546,7 @@ class BillingViewTests(TestCase):
 
 @override_settings(STRIPE_PLANS=TEST_PLANS, STRIPE_SECRET_KEY="sk_test_dummy",
                    STRIPE_WEBHOOK_SECRET="whsec_test")
+@skipUnless(settings.BILLING_ENABLED, "ONPREMISE_MODE では課金機能が無効なため対象外")
 class StripeWebhookTests(TestCase):
     def setUp(self):
         self.group = Group.objects.create(

@@ -26,15 +26,17 @@
   {% if limit_reached %}
     <div class="alert alert-danger" role="alert">
       <i class="bi bi-person-fill-slash me-1"></i>{{ limit_message }}
-      <div class="mt-2">
-        <a class="btn btn-warning btn-sm" href="{% url 'custom_auth_group:billing' group.id %}">
-          <i class="bi bi-credit-card me-1"></i>プランを確認する
-        </a>
-      </div>
+      {% if billing_enabled %}
+        <div class="mt-2">
+          <a class="btn btn-warning btn-sm" href="{% url 'custom_auth_group:billing' group.id %}">
+            <i class="bi bi-credit-card me-1"></i>プランを確認する
+          </a>
+        </div>
+      {% endif %}
     </div>
   {% else %}
     <p class="text-muted small">
-      現在のメンバー数: {{ member_count }}{% if max_members %} / {{ max_members }} 名（{{ current_plan.name }}プラン）{% else %} 名（無制限）{% endif %}
+      現在のメンバー数: {{ member_count }}{% if max_members %} / {{ max_members }} 名{% if billing_enabled %}（{{ current_plan.name }}プラン）{% endif %}{% else %} 名（無制限）{% endif %}
     </p>
   {% endif %}
 

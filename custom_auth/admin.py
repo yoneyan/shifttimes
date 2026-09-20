@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin
 from simple_history.admin import SimpleHistoryAdmin
 
@@ -124,6 +125,25 @@ class Group(SimpleHistoryAdmin):
     inlines = (
         TermInlineGroupAdmin,
     )
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+        if settings.BILLING_ENABLED:
+            return fieldsets
+        # オンプレミスモードでは無償付与も Stripe の同期も使わないので隠す
+        return tuple(fs for fs in fieldsets if fs[0] not in ("無償化", "Stripe"))
+
+    def get_list_display(self, request):
+        list_display = super().get_list_display(request)
+        if settings.BILLING_ENABLED:
+            return list_display
+        return tuple(f for f in list_display if not f.startswith(("free_", "stripe_")))
+
+    def get_list_filter(self, request):
+        list_filter = super().get_list_filter(request)
+        if settings.BILLING_ENABLED:
+            return list_filter
+        return tuple(f for f in list_filter if not f.startswith(("free_", "stripe_")))
 
 
 @admin.register(UserActivateToken)
