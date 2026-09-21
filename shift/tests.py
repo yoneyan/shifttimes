@@ -1,11 +1,15 @@
 from datetime import date, time, timedelta
+from io import StringIO
+from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 from django.urls import reverse
 
 from custom_auth.models import Group, UserGroup
+from shift import slack
 from shift.models import (
     AttendanceRecord,
     AttendanceSetting,
@@ -13,6 +17,7 @@ from shift.models import (
     OpeningScheduleType,
     ShiftDeadline,
     ShiftEntry,
+    SlackNotificationSetting,
     TimeSlot,
 )
 
@@ -1176,3 +1181,319 @@ class AttendanceTests(TestCase):
         self.assertTrue(night_shift.is_overnight)
         self.assertIsNone(working.worked_minutes)
         self.assertTrue(working.is_working)
+
+
+class SlackNotificationTests(TestCase):
+    """グループごとの Slack 通知（設定・手動送信・自動通知）"""
+
+    WEBHOOK_URL = "https://hooks.slack.com/services/T000/B000/xxxxxxxx"
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.member = user_model.objects.create(
+            username="slack-member", username_jp="メンバー", email="slack-member@example.com",
+            is_active=True,
+        )
+        self.admin_user = user_model.objects.create(
+            username="slack-admin", username_jp="管理者", email="slack-admin@example.com",
+            is_active=True,
+        )
+        self.group = Group.objects.create(name="slack-shop", name_jp="通知店舗")
+        UserGroup.objects.create(user=self.member, group=self.group)
+        UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
+        self.time_slot = TimeSlot.objects.create(
+            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+        )
+        self.url = reverse("shift:slack_settings", args=[self.group.id])
+
+    def _enable_slack(self, **overrides):
+        defaults = {"is_enabled": True, "webhook_url": self.WEBHOOK_URL}
+        defaults.update(overrides)
+        setting, _created = SlackNotificationSetting.objects.update_or_create(
+            group=self.group, defaults=defaults,
+        )
+        return setting
+
+    def test_settings_page_requires_admin(self):
+        self.client.force_login(self.member)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+
+        self.client.force_login(self.admin_user)
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+
+    def test_admin_can_save_webhook_url(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(self.url, {
+            "action": "save",
+            "is_enabled": "on",
+            "webhook_url": self.WEBHOOK_URL,
+            "notify_deadline_reminder": "on",
+            "reminder_days_before": "3",
+        })
+
+        self.assertEqual(response.status_code, 302)
+        setting = SlackNotificationSetting.objects.get(group=self.group)
+        self.assertTrue(setting.is_ready)
+        self.assertEqual(setting.webhook_url, self.WEBHOOK_URL)
+
+    def test_enabling_without_webhook_url_is_rejected(self):
+        self.client.force_login(self.admin_user)
+
+        self.client.post(self.url, {
+            "action": "save", "is_enabled": "on", "webhook_url": "", "reminder_days_before": "3",
+        })
+
+        self.assertFalse(SlackNotificationSetting.objects.get(group=self.group).is_enabled)
+
+    def test_invalid_save_redisplays_the_stored_state(self):
+        self._enable_slack()
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(self.url, {
+            "action": "save", "is_enabled": "on",
+            "webhook_url": "https://example.com/hook", "reminder_days_before": "3",
+        })
+
+        # 入力エラーで差し戻されても、状態表示は保存済みの内容のまま
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["setting"].is_ready)
+        self.assertContains(response, "送信できます")
+
+    def test_non_slack_webhook_url_is_rejected(self):
+        self.client.force_login(self.admin_user)
+
+        self.client.post(self.url, {
+            "action": "save", "is_enabled": "on",
+            "webhook_url": "https://example.com/hook", "reminder_days_before": "3",
+        })
+
+        self.assertEqual(SlackNotificationSetting.objects.get(group=self.group).webhook_url, "")
+
+    def test_blank_webhook_url_keeps_the_saved_one(self):
+        self._enable_slack()
+        self.client.force_login(self.admin_user)
+
+        self.client.post(self.url, {
+            "action": "save", "is_enabled": "on", "webhook_url": "",
+            "mention": "<!here>", "reminder_days_before": "5",
+        })
+
+        setting = SlackNotificationSetting.objects.get(group=self.group)
+        self.assertEqual(setting.webhook_url, self.WEBHOOK_URL)
+        self.assertEqual(setting.mention, "<!here>")
+        self.assertEqual(setting.reminder_days_before, 5)
+
+    def test_saved_webhook_url_is_not_rendered_in_the_form(self):
+        self._enable_slack()
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.url)
+
+        self.assertNotContains(response, self.WEBHOOK_URL)
+        self.assertContains(response, "登録済み")
+
+    def test_clear_checkbox_removes_webhook_url(self):
+        self._enable_slack()
+        self.client.force_login(self.admin_user)
+
+        self.client.post(self.url, {
+            "action": "save", "webhook_url": "", "clear_webhook_url": "on", "reminder_days_before": "3",
+        })
+
+        setting = SlackNotificationSetting.objects.get(group=self.group)
+        self.assertEqual(setting.webhook_url, "")
+        self.assertFalse(setting.is_ready)
+
+    def test_manual_request_sends_message_with_unsubmitted_members(self):
+        self._enable_slack(mention="<!here>")
+        self.client.force_login(self.admin_user)
+
+        with mock.patch("shift.slack.WebhookClient") as webhook_client:
+            webhook_client.return_value.send.return_value = mock.Mock(status_code=200, body="ok")
+            response = self.client.post(self.url, {
+                "action": "request",
+                "period_start": "2026-06-01",
+                "period_end": "2026-06-30",
+                "deadline_date": "2026-05-25",
+                "message": "早めにお願いします",
+                "include_unsubmitted": "on",
+            })
+
+        self.assertEqual(response.status_code, 302)
+        webhook_client.assert_called_once_with(self.WEBHOOK_URL, timeout=slack.SEND_TIMEOUT_SECONDS)
+        text = webhook_client.return_value.send.call_args.kwargs["attachments"][0]["text"]
+        self.assertIn("<!here>", text)
+        self.assertIn("2026/06/01", text)
+        self.assertIn("2026/05/25", text)
+        self.assertIn("早めにお願いします", text)
+        self.assertIn("slack-member", text)  # 未提出メンバーの表示名
+
+    def test_manual_request_is_blocked_when_slack_is_disabled(self):
+        self.client.force_login(self.admin_user)
+
+        with mock.patch("shift.slack.WebhookClient") as webhook_client:
+            self.client.post(self.url, {
+                "action": "request", "period_start": "2026-06-01", "period_end": "2026-06-30",
+            })
+
+        webhook_client.assert_not_called()
+
+    def test_confirm_notifies_when_enabled(self):
+        self._enable_slack(notify_shift_confirmed=True)
+        today = timezone.now().date()
+        ShiftEntry.objects.create(
+            group=self.group, user=self.member, work_date=today,
+            time_slot=self.time_slot, status=ShiftEntry.AVAILABLE, is_draft=True,
+        )
+        self.client.force_login(self.member)
+
+        with mock.patch("shift.slack.WebhookClient") as webhook_client:
+            webhook_client.return_value.send.return_value = mock.Mock(status_code=200, body="ok")
+            self.client.post(reverse("shift:shift_confirm", args=[self.group.id]), {
+                "date_from": today.isoformat(), "date_to": today.isoformat(),
+            })
+
+        self.assertEqual(webhook_client.return_value.send.call_count, 1)
+        text = webhook_client.return_value.send.call_args.kwargs["attachments"][0]["text"]
+        self.assertIn("slack-member", text)
+
+    def test_confirm_does_not_notify_when_toggle_is_off(self):
+        self._enable_slack(notify_shift_confirmed=False)
+        today = timezone.now().date()
+        ShiftEntry.objects.create(
+            group=self.group, user=self.member, work_date=today,
+            time_slot=self.time_slot, status=ShiftEntry.AVAILABLE, is_draft=True,
+        )
+        self.client.force_login(self.member)
+
+        with mock.patch("shift.slack.WebhookClient") as webhook_client:
+            self.client.post(reverse("shift:shift_confirm", args=[self.group.id]), {
+                "date_from": today.isoformat(), "date_to": today.isoformat(),
+            })
+
+        webhook_client.assert_not_called()
+
+    def test_deadline_save_notifies_and_resets_reminder(self):
+        self._enable_slack(notify_schedule_changed=True)
+        self.client.force_login(self.admin_user)
+
+        with mock.patch("shift.slack.WebhookClient") as webhook_client:
+            webhook_client.return_value.send.return_value = mock.Mock(status_code=200, body="ok")
+            self.client.post(reverse("shift:schedule_settings", args=[self.group.id]), {
+                "action": "deadline",
+                "period_start": "2026-07-01",
+                "period_end": "2026-07-31",
+                "deadline_date": "2026-06-25",
+                "note": "",
+            })
+
+        deadline = ShiftDeadline.objects.get(group=self.group, period_start=date(2026, 7, 1))
+        self.assertIsNone(deadline.reminder_sent_at)
+        self.assertEqual(webhook_client.return_value.send.call_count, 1)
+
+    def test_schedule_change_notifies(self):
+        self._enable_slack(notify_schedule_changed=True)
+        schedule_type = OpeningScheduleType.objects.create(group=self.group, name="休校",
+                                                           blocks_shift_input=True)
+        self.client.force_login(self.admin_user)
+
+        with mock.patch("shift.slack.WebhookClient") as webhook_client:
+            webhook_client.return_value.send.return_value = mock.Mock(status_code=200, body="ok")
+            self.client.post(reverse("shift:schedule_settings", args=[self.group.id]), {
+                "action": "schedule_date",
+                "work_date": "2026-07-10",
+                "schedule_type": str(schedule_type.id),
+                "note": "",
+            })
+
+        text = webhook_client.return_value.send.call_args.kwargs["attachments"][0]["text"]
+        self.assertIn("休校", text)
+        self.assertIn("7/10", text)
+
+    def test_send_failure_does_not_break_the_page(self):
+        self._enable_slack()
+        self.client.force_login(self.admin_user)
+
+        with mock.patch("shift.slack.WebhookClient") as webhook_client:
+            webhook_client.return_value.send.side_effect = RuntimeError("boom")
+            response = self.client.post(self.url, {
+                "action": "test",
+            }, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Slackへの送信に失敗しました")
+
+
+class SlackReminderCommandTests(TestCase):
+    """send_shift_reminders コマンド"""
+
+    WEBHOOK_URL = "https://hooks.slack.com/services/T000/B000/yyyyyyyy"
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.member = user_model.objects.create(
+            username="reminder-member", username_jp="メンバー",
+            email="reminder-member@example.com", is_active=True,
+        )
+        self.group = Group.objects.create(name="reminder-shop", name_jp="リマインド店舗")
+        UserGroup.objects.create(user=self.member, group=self.group)
+        self.setting = SlackNotificationSetting.objects.create(
+            group=self.group, is_enabled=True, webhook_url=self.WEBHOOK_URL,
+            notify_deadline_reminder=True, reminder_days_before=3,
+        )
+
+    def _deadline(self, days_ahead):
+        # (group, period_start) が一意なので、期限ごとに対象期間もずらす
+        today = timezone.now().date()
+        period_start = today + timedelta(days=days_ahead)
+        return ShiftDeadline.objects.create(
+            group=self.group,
+            period_start=period_start,
+            period_end=period_start + timedelta(days=30),
+            deadline_date=today + timedelta(days=days_ahead),
+        )
+
+    def _run(self, **options):
+        with mock.patch("shift.slack.WebhookClient") as webhook_client:
+            webhook_client.return_value.send.return_value = mock.Mock(status_code=200, body="ok")
+            call_command("send_shift_reminders", stdout=StringIO(), stderr=StringIO(), **options)
+        return webhook_client
+
+    def test_sends_only_within_the_configured_window(self):
+        near = self._deadline(2)
+        far = self._deadline(30)
+
+        webhook_client = self._run()
+
+        self.assertEqual(webhook_client.return_value.send.call_count, 1)
+        near.refresh_from_db()
+        far.refresh_from_db()
+        self.assertIsNotNone(near.reminder_sent_at)
+        self.assertIsNone(far.reminder_sent_at)
+
+    def test_does_not_send_twice_for_the_same_deadline(self):
+        self._deadline(1)
+
+        self._run()
+        webhook_client = self._run()
+
+        webhook_client.return_value.send.assert_not_called()
+
+    def test_dry_run_does_not_send(self):
+        deadline = self._deadline(1)
+
+        webhook_client = self._run(dry_run=True)
+
+        webhook_client.return_value.send.assert_not_called()
+        deadline.refresh_from_db()
+        self.assertIsNone(deadline.reminder_sent_at)
+
+    def test_skips_disabled_groups(self):
+        self.setting.is_enabled = False
+        self.setting.save()
+        self._deadline(1)
+
+        webhook_client = self._run()
+
+        webhook_client.return_value.send.assert_not_called()

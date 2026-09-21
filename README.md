@@ -16,6 +16,7 @@
 | 勤怠管理 | 出退勤ボタンによる打刻と手動入力。月ごとの実働時間を集計。日をまたぐ夜勤にも対応 |
 | メンバー管理 | グループへのユーザ登録、管理者権限の付与、メンバー一覧 |
 | サブスクリプション | Stripe によるプラン契約。プランごとにメンバー数の上限を適用。運営による無償付与にも対応 |
+| Slack 通知 | グループごとに Incoming Webhook を登録し、シフト入力のお願いを送信。提出期限のリマインドやシフト確定の自動通知にも対応 |
 | お知らせ | 運営からの通知を掲示。運営は通知管理ページから掲示期間つきで追加・編集できる |
 | 認証 | メールによるアカウント有効化、パスワードリセット、TOTP による 2 要素認証 |
 
@@ -81,6 +82,29 @@ uv run python manage.py runserver --settings=shifttimes.develop_settings
 > **注意**: このファイルには平文の資格情報が入りがちです。ファイル名は必ず `*_settings.py`
 > の形を保ち、`git status` に現れていないことを確認してください。
 
+## 定期実行
+
+シフト提出期限のリマインドを Slack へ送るコマンドがあります。cron や systemd timer
+から 1 日 1 回呼んでください（呼ばない限りリマインドは送られません）。
+
+```bash
+uv run python manage.py send_shift_reminders
+```
+
+| オプション | 説明 |
+|---|---|
+| `--dry-run` | 送信せず、対象になるグループと期限だけを表示する |
+| `--group-id <id>` | 特定のグループだけを対象にする |
+
+提出期限 1 件につき 1 回だけ送信し、送信済みかどうかは `ShiftDeadline.reminder_sent_at`
+で判定します。何日前に送るかはグループごとに Slack 通知設定で指定します。
+
+cron の例（毎朝 9 時）:
+
+```
+0 9 * * * cd /srv/shifttimes && /usr/local/bin/uv run python manage.py send_shift_reminders
+```
+
 ## テスト
 
 ```bash
@@ -109,9 +133,9 @@ uv run ruff check .
 | `SITE_NAME` | `シフト管理システム` | ヘッダー・フッター・トップページに出すサイト名 |
 | `ALLOWED_HOSTS` | `*` | 空白区切り |
 | `CSRF_TRUSTED_ORIGINS` | `http://localhost:8000` | 空白区切り |
-| `SITE_URL` | `http://localhost:8000` | Stripe のリダイレクト先などに使う絶対 URL |
+| `SITE_URL` | `http://localhost:8000` | Stripe のリダイレクト先や Slack 通知のリンクに使う絶対 URL |
 | `DOMAIN_URL` | `SITE_URL` と同じ | メール本文のリンクに使う |
-| `ADMIN_DOMAIN_URL` | `test.local` | Slack 通知に載せる管理画面の URL |
+| `ADMIN_DOMAIN_URL` | `test.local` | 運営向け Slack 通知に載せる管理画面の URL |
 | `APP_NAME` | `ShiftTimes` | 認証アプリ（TOTP）に表示されるサービス名 |
 | `CONTACT_EMAIL` | `contact@example.com` | Enterprise プランの問い合わせ先 |
 

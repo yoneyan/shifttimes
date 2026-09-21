@@ -16,6 +16,7 @@ urlpatterns = [
          name="deadline_delete"),
     path("schedule/<int:group_id>/time-slots/<int:time_slot_id>/delete/", views.time_slot_delete,
          name="time_slot_delete"),
+    path("schedule/<int:group_id>/slack/", views.slack_settings, name="slack_settings"),
     path("summary/", views.summary_index, name="summary_index"),
     path("summary/<int:group_id>/", views.summary, name="summary"),
     path("attendance/", attendance_views.attendance_index, name="attendance_index"),

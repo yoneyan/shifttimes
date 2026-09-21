@@ -61,6 +61,7 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
       ──< ShiftEntry >── TimeSlot
       ──< AttendanceRecord
       ──1 AttendanceSetting
+      ──1 SlackNotificationSetting
 ```
 
 | モデル | 説明 |
@@ -72,6 +73,7 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 | `ShiftDeadline` | 対象期間（`period_start`〜`period_end`）と提出期限 |
 | `AttendanceSetting` | グループごとの勤怠設定（`OneToOne`）。機能の有効・無効と入力方法の許可 |
 | `AttendanceRecord` | 1 日ぶんの勤怠。`(group, user, work_date)` が一意 |
+| `SlackNotificationSetting` | グループごとの Slack 通知設定（`OneToOne`）。Webhook URL と通知ごとの有効・無効 |
 
 `ShiftEntry.status` は `available`（勤務可能）/ `unavailable`（勤務不可）/
 `maybe`（要相談）の 3 値です。
@@ -147,6 +149,7 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 | `schedule/<id>/view/` | `schedule_member` | 開講スケジュール（メンバー） |
 | `schedule/<id>/settings/` | `schedule_settings` | 開講区分・提出期限の設定（管理者） |
 | `schedule/<id>/deadlines/<id>/delete/` | `deadline_delete` | 提出期限の削除（管理者） |
+| `schedule/<id>/slack/` | `slack_settings` | Slack 通知の設定と手動送信（管理者） |
 | `summary/` | `summary_index` | 提出状況のグループ選択 |
 | `summary/<id>/` | `summary` | 提出状況（管理者） |
 | `attendance/` | `attendance_index` | 勤怠が有効な所属グループ一覧 |
@@ -209,12 +212,37 @@ return timezone.make_naive(value, timezone.get_default_timezone())
 
 ### Slack 通知
 
-`shifttimes/notify.py` がモデルの作成・更新・削除を Slack に飛ばします。
-各アプリの `signals.py` から呼ばれています。
+送信先の違う 2 系統があります。混ぜないように注意してください。
 
+| 系統 | モジュール | 送信先 | 誰が設定するか |
+|---|---|---|---|
+| 運営向けの監査ログ | `shifttimes/notify.py` | `settings.SLACK_WEBHOOK_URL_LOG`（全体で 1 つ） | 運営（設定ファイル） |
+| グループ向けの業務通知 | `shift/slack.py` | `SlackNotificationSetting.webhook_url`（グループごと） | グループ管理者（画面） |
+
+**運営向け**は、モデルの作成・更新・削除を各アプリの `signals.py` から飛ばします。
 Webhook URL は `getattr(settings, "SLACK_WEBHOOK_URL_LOG", "")` で読むため、
 **`settings.py` には定義されていません**。`develop_settings.py` などの
 ローカル設定モジュールで定義しないと通知は常に無効です（例外にはなりません）。
+
+**グループ向け**は `shift/slack.py` にまとめています。送れるのは 4 種類です。
+
+| 通知 | 送信のきっかけ | 設定項目 |
+|---|---|---|
+| シフト入力のお願い | 管理者が Slack 通知設定ページで送信ボタンを押す | （常に手動） |
+| 提出期限のリマインド | `send_shift_reminders` コマンド（cron などで 1 日 1 回） | `notify_deadline_reminder`, `reminder_days_before` |
+| メンバーのシフト確定 | `shift_confirm` で下書きを確定したとき | `notify_shift_confirmed` |
+| 提出期限・開講スケジュールの変更 | `schedule_settings` で保存したとき | `notify_schedule_changed` |
+
+設計上の約束ごと。
+
+- 送信関数は `(送信できたか, エラーメッセージ)` を返し、**例外を外に出しません**。
+  Slack が落ちていてもシフトの登録や設定の保存は成功させます。
+- `is_ready`（有効かつ Webhook URL 登録済み）でない設定には何も送りません。
+- リマインドは提出期限 1 件につき 1 回だけです。送信済みかどうかは
+  `ShiftDeadline.reminder_sent_at` で判定し、期限を保存し直すと `None` に戻って再送できます。
+- Webhook URL は秘密情報なので、`HistoricalRecords(excluded_fields=["webhook_url"])` で
+  履歴に残さず、設定画面の入力欄にも既存値を描画しません（伏せ字のみ表示）。
+- メッセージ中の URL は `settings.SITE_URL` を基準に組み立てます。
 
 ### テンプレート
 

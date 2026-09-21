@@ -13,9 +13,12 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from custom_auth.models import Group, UserGroup
+from shift import slack
 from shift.forms import (
     OpeningScheduleTypeForm,
     ShiftDeadlineForm,
+    SlackNotificationSettingForm,
+    SlackShiftRequestForm,
     TimeSlotForm,
 )
 from shift.models import (
@@ -688,6 +691,8 @@ def shift_confirm(request, group_id):
             is_draft=True,
         ).update(is_draft=False)
         messages.success(request, "%d件のシフト希望を確定しました。" % count)
+        if count:
+            slack.notify_shift_confirmed(group, request.user, count, date_from, date_to)
         return redirect("%s?group=%d" % (reverse("shift:index"), group.id))
 
     # GET: 確定対象の下書きを表示
@@ -867,10 +872,18 @@ def schedule_settings(request, group_id):
         )
         if not saved:
             messages.error(request, "開講区分の保存に失敗しました。")
-        elif schedule_type_id:
+            return redirect(redirect_url)
+
+        if schedule_type_id:
             messages.success(request, "%d日分の開講スケジュールを保存しました。" % saved)
         else:
             messages.success(request, "%d日分を未設定（曜日の基本スケジュール）に戻しました。" % saved)
+        schedule_type_name = (
+            OpeningScheduleType.objects.filter(group=group, id=schedule_type_id)
+            .values_list("name", flat=True).first()
+            if schedule_type_id else ""
+        )
+        slack.notify_schedule_changed(group, target_dates, schedule_type_name)
         return redirect(redirect_url)
 
     if request.method == "POST" and action == "deadline":
@@ -881,18 +894,21 @@ def schedule_settings(request, group_id):
         if deadline_form.is_valid():
             cleaned = deadline_form.cleaned_data
             # (group, period_start) は一意なので、同じ開始日の期限があればそれを更新する
-            ShiftDeadline.objects.update_or_create(
+            saved_deadline, created = ShiftDeadline.objects.update_or_create(
                 group=group,
                 period_start=cleaned["period_start"],
                 defaults={
                     "period_end": cleaned["period_end"],
                     "deadline_date": cleaned["deadline_date"],
                     "note": cleaned["note"],
+                    # 期限を動かしたらリマインドを送り直せるようにする
+                    "reminder_sent_at": None,
                 },
             )
             if deadline is not None and deadline.period_start != cleaned["period_start"]:
                 deadline.delete()
             messages.success(request, "提出期限を保存しました。")
+            slack.notify_deadline_changed(group, saved_deadline, created)
         else:
             messages.error(request, "提出期限を保存できませんでした。%s" % deadline_form.errors.as_text())
         return redirect("shift:schedule_settings", group_id=group.id)
@@ -1260,3 +1276,74 @@ def summary(request, group_id):
         "next_month_days": (next_month_to - next_month_from).days + 1,
     }
     return render(request, "shift/summary.html", context)
+
+
+@login_required
+def slack_settings(request, group_id):
+    """管理者向けの Slack 通知設定と、シフト入力のお願いの手動送信"""
+    group = _get_group_for_user(request, group_id, require_admin=True)
+    setting = slack.get_setting(group)
+    open_period = _shift_entry_period(group)
+
+    setting_form = SlackNotificationSettingForm(instance=setting)
+    request_form = SlackShiftRequestForm(initial={
+        "period_start": open_period.period_start,
+        "period_end": open_period.period_end,
+        "deadline_date": open_period.deadline_date,
+        "include_unsubmitted": True,
+    })
+
+    action = request.POST.get("action", "") if request.method == "POST" else ""
+
+    if action == "save":
+        setting_form = SlackNotificationSettingForm(request.POST, instance=setting)
+        if setting_form.is_valid():
+            setting_form.save()
+            messages.success(request, "Slack通知の設定を保存しました。")
+            return redirect("shift:slack_settings", group_id=group.id)
+        messages.error(request, "設定を保存できませんでした。%s" % setting_form.errors.as_text())
+        # is_valid() の過程で instance に未保存の値が入るので、状態表示は DB の内容に戻す
+        setting.refresh_from_db()
+
+    elif action == "test":
+        sent, error = slack.notify_test(group, setting=setting)
+        if sent:
+            messages.success(request, "テスト通知を送信しました。Slackを確認してください。")
+        else:
+            messages.error(request, error)
+        return redirect("shift:slack_settings", group_id=group.id)
+
+    elif action == "request":
+        request_form = SlackShiftRequestForm(request.POST)
+        if request_form.is_valid():
+            cleaned = request_form.cleaned_data
+            sent, error = slack.notify_shift_request(
+                group,
+                cleaned["period_start"],
+                cleaned["period_end"],
+                deadline_date=cleaned["deadline_date"],
+                message=cleaned["message"],
+                include_unsubmitted=cleaned["include_unsubmitted"],
+                setting=setting,
+            )
+            if sent:
+                messages.success(request, "シフト入力のお願いをSlackへ送信しました。")
+            else:
+                messages.error(request, error)
+            return redirect("shift:slack_settings", group_id=group.id)
+        messages.error(request, "送信できませんでした。%s" % request_form.errors.as_text())
+
+    unsubmitted = (
+        slack.unsubmitted_members(group, open_period.period_start, open_period.period_end)
+        if setting.is_ready else []
+    )
+
+    return render(request, "shift/slack_settings.html", {
+        "group": group,
+        "setting": setting,
+        "setting_form": setting_form,
+        "request_form": request_form,
+        "open_period": open_period,
+        "unsubmitted_members": unsubmitted,
+        "member_count": group.member_count,
+    })

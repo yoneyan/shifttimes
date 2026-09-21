@@ -8,6 +8,7 @@ from shift.models import (
     OpeningScheduleType,
     ShiftDeadline,
     ShiftEntry,
+    SlackNotificationSetting,
     TimeSlot,
 )
 
@@ -40,10 +41,11 @@ class OpeningScheduleTypeAdmin(SimpleHistoryAdmin):
 class ShiftDeadlineAdmin(SimpleHistoryAdmin):
     fieldsets = (
         (None, {"fields": ("group", "period_start", "period_end", "deadline_date")}),
-        ("info", {"fields": ("note",)}),
+        ("info", {"fields": ("note", "reminder_sent_at")}),
         ("audit", {"fields": ("created_at", "updated_at")}),
     )
-    list_display = ("id", "group", "period_start", "period_end", "deadline_date", "updated_at")
+    list_display = ("id", "group", "period_start", "period_end", "deadline_date", "reminder_sent_at",
+                    "updated_at")
     list_filter = ("group",)
     search_fields = ("group__name", "note")
     readonly_fields = ("created_at", "updated_at")
@@ -98,4 +100,20 @@ class AttendanceRecordAdmin(SimpleHistoryAdmin):
                     "source", "updated_at")
     list_filter = ("group", "source", "work_date")
     search_fields = ("user__username", "group__name", "note")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(SlackNotificationSetting)
+class SlackNotificationSettingAdmin(SimpleHistoryAdmin):
+    fieldsets = (
+        (None, {"fields": ("group", "is_enabled", "webhook_url", "mention")}),
+        ("notify", {"fields": ("notify_deadline_reminder", "reminder_days_before",
+                               "notify_shift_confirmed", "notify_schedule_changed")}),
+        ("audit", {"fields": ("created_at", "updated_at")}),
+    )
+    list_display = ("id", "group", "is_enabled", "notify_deadline_reminder", "reminder_days_before",
+                    "notify_shift_confirmed", "notify_schedule_changed", "updated_at")
+    list_filter = ("is_enabled", "notify_deadline_reminder", "notify_shift_confirmed",
+                   "notify_schedule_changed")
+    search_fields = ("group__name", "group__name_jp")
     readonly_fields = ("created_at", "updated_at")

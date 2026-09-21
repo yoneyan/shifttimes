@@ -7,6 +7,7 @@ from shift.models import (
     OpeningScheduleType,
     ShiftDeadline,
     ShiftEntry,
+    SlackNotificationSetting,
     TimeSlot,
     WEEKDAY_CHOICES,
 )
@@ -168,4 +169,104 @@ class AttendanceRecordForm(forms.ModelForm):
             if break_minutes > end - start:
                 raise forms.ValidationError("休憩時間が勤務時間を超えています。")
 
+        return cleaned_data
+
+
+class SlackNotificationSettingForm(forms.ModelForm):
+    """グループごとの Slack 通知設定
+
+    Webhook URL は秘密情報なので、画面には表示せず「空なら変更しない」扱いにする。
+    """
+
+    clear_webhook_url = forms.BooleanField(
+        label="Webhook URL を削除する", required=False,
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+    )
+
+    class Meta:
+        model = SlackNotificationSetting
+        fields = (
+            "is_enabled", "webhook_url", "mention",
+            "notify_deadline_reminder", "reminder_days_before",
+            "notify_shift_confirmed", "notify_schedule_changed",
+        )
+        widgets = {
+            "is_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "webhook_url": forms.URLInput(attrs={
+                "class": "form-control",
+                "placeholder": "https://hooks.slack.com/services/...",
+                "autocomplete": "off",
+            }),
+            "mention": forms.TextInput(attrs={"class": "form-control", "placeholder": "例: <!here>"}),
+            "notify_deadline_reminder": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "reminder_days_before": forms.NumberInput(attrs={"class": "form-control", "min": 0, "max": 60}),
+            "notify_shift_confirmed": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "notify_schedule_changed": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["webhook_url"].required = False
+        self.fields["webhook_url"].label = "Incoming Webhook URL"
+        if self.instance.pk and self.instance.webhook_url:
+            # 保存済みの URL は画面に出さない（伏せ字だけを help_text で見せる）
+            self.initial["webhook_url"] = ""
+            self.fields["webhook_url"].help_text = (
+                "登録済み（%s）。変更するときだけ新しい URL を入力してください。"
+                % self.instance.masked_webhook_url
+            )
+        else:
+            self.fields["webhook_url"].help_text = (
+                "Slack の Incoming Webhook で発行した URL を貼り付けてください。"
+            )
+
+    def clean_webhook_url(self):
+        url = (self.cleaned_data.get("webhook_url") or "").strip()
+        if self.data.get("clear_webhook_url"):
+            return ""
+        if not url:
+            # 未入力は「変更しない」。初回登録なら空のまま
+            return self.instance.webhook_url
+        if not url.startswith("https://hooks.slack.com/"):
+            raise forms.ValidationError("Slack の Incoming Webhook URL（https://hooks.slack.com/...）を入力してください。")
+        return url
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("is_enabled") and not cleaned_data.get("webhook_url"):
+            raise forms.ValidationError("Slack通知を有効にするには Webhook URL が必要です。")
+        return cleaned_data
+
+
+class SlackShiftRequestForm(forms.Form):
+    """「シフトを入力してください」の手動送信"""
+
+    period_start = forms.DateField(
+        label="対象期間 開始日",
+        widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+    )
+    period_end = forms.DateField(
+        label="対象期間 終了日",
+        widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+    )
+    deadline_date = forms.DateField(
+        label="提出期限日", required=False,
+        widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+    )
+    message = forms.CharField(
+        label="ひとこと", required=False, max_length=500,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 3,
+                                     "placeholder": "例: 今月は連休があるので早めにお願いします"}),
+    )
+    include_unsubmitted = forms.BooleanField(
+        label="未提出メンバーの名前を載せる", required=False, initial=True,
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        period_start = cleaned_data.get("period_start")
+        period_end = cleaned_data.get("period_end")
+        if period_start and period_end and period_end < period_start:
+            raise forms.ValidationError("対象期間の終了日は開始日以降にしてください。")
         return cleaned_data

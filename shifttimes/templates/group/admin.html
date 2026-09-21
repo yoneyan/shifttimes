@@ -42,6 +42,10 @@
       <a class="btn btn-outline-primary" href="{% url 'shift:summary' group.id %}">
         <i class="bi bi-grid-3x3-gap me-1"></i>シフト提出状況
       </a>
+      <a class="btn btn-outline-primary" href="{% url 'shift:slack_settings' group.id %}">
+        <i class="bi bi-slack me-1"></i>Slack通知{% if slack_setting.is_ready %}
+          <span class="badge text-bg-success ms-1">有効</span>{% endif %}
+      </a>
     </div>
   </section>
 

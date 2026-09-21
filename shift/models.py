@@ -202,6 +202,8 @@ class ShiftDeadline(models.Model):
     period_end = models.DateField("対象期間 終了日")
     deadline_date = models.DateField("提出期限日")
     note = MediumTextField("メモ", default="", blank=True)
+    # Slack のリマインドを二重に送らないための記録。期限を変更すると送信し直せるように null に戻す
+    reminder_sent_at = models.DateTimeField("リマインド送信日時", blank=True, null=True)
     history = HistoricalRecords()
 
     def __str__(self):
@@ -308,3 +310,45 @@ def minutes_to_hhmm(minutes):
     if minutes is None:
         return ""
     return "%d:%02d" % (minutes // 60, minutes % 60)
+
+
+class SlackNotificationSetting(models.Model):
+    """グループごとの Slack 通知設定（Incoming Webhook）
+
+    運営向けの通知（``shifttimes.notify``）とは別物で、こちらはグループ管理者が
+    自分たちのワークスペースに向けて設定する。
+    """
+
+    class Meta:
+        verbose_name = "Slack通知設定"
+        verbose_name_plural = "Slack通知設定"
+
+    created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField("更新日", auto_now=True)
+    group = models.OneToOneField("custom_auth.Group", on_delete=models.CASCADE,
+                                 related_name="slack_setting", verbose_name="グループ")
+    is_enabled = models.BooleanField("Slack通知を利用する", default=False)
+    webhook_url = models.URLField("Incoming Webhook URL", max_length=500, default="", blank=True)
+    mention = models.CharField("メンション", max_length=100, default="", blank=True,
+                               help_text="例: <!here>、<!channel>、<@U01ABCDEFG>")
+    notify_deadline_reminder = models.BooleanField("提出期限のリマインド", default=True)
+    reminder_days_before = models.PositiveSmallIntegerField("リマインドする日数（期限の何日前）", default=3)
+    notify_shift_confirmed = models.BooleanField("メンバーのシフト確定", default=False)
+    notify_schedule_changed = models.BooleanField("提出期限・開講スケジュールの変更", default=True)
+    # Webhook URL は秘密情報なので履歴には残さない
+    history = HistoricalRecords(excluded_fields=["webhook_url"])
+
+    def __str__(self):
+        return "%s: %s" % (self.group, "有効" if self.is_enabled else "無効")
+
+    @property
+    def is_ready(self):
+        """実際に送信できる状態か（有効かつ Webhook URL が設定済み）"""
+        return bool(self.is_enabled and self.webhook_url)
+
+    @property
+    def masked_webhook_url(self):
+        """画面表示用に伏せ字にした Webhook URL"""
+        if not self.webhook_url:
+            return ""
+        return "%s…%s" % (self.webhook_url[:34], self.webhook_url[-4:])

@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+{% block title %}Slack通知設定 | {% endblock %}
+{% block page_title %}Slack通知設定{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'custom_auth_group:admin_home' group.id %}">
+    <i class="bi bi-arrow-left me-1"></i>管理者ページへ
+  </a>
+{% endblock %}
+{% block content %}
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <h2 class="h6 mb-2">
+        現在の状態
+        {% if setting.is_ready %}
+          <span class="badge text-bg-success align-middle">送信できます</span>
+        {% elif setting.is_enabled %}
+          <span class="badge text-bg-warning align-middle">Webhook URL が未設定</span>
+        {% else %}
+          <span class="badge text-bg-secondary align-middle">無効</span>
+        {% endif %}
+      </h2>
+      <ul class="list-unstyled small mb-0">
+        <li>送信先: {% if setting.webhook_url %}<code>{{ setting.masked_webhook_url }}</code>{% else %}未設定{% endif %}</li>
+        <li>メンション: {% if setting.mention %}<code>{{ setting.mention }}</code>{% else %}なし{% endif %}</li>
+      </ul>
+    </div>
+    <div class="card-footer bg-white">
+      <form method="post" class="d-inline">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="test">
+        <button type="submit" class="btn btn-outline-primary btn-sm" {% if not setting.is_ready %}disabled{% endif %}>
+          <i class="bi bi-bell me-1"></i>テスト送信
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <form method="post" class="card mb-4">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="request">
+    <div class="card-header bg-white">
+      <h2 class="h6 mb-0"><i class="bi bi-megaphone me-1"></i>シフト入力のお願いを送る</h2>
+    </div>
+    <div class="card-body">
+      {% if not setting.is_ready %}
+        <div class="alert alert-warning py-2 small mb-3" role="alert">
+          下の「Slack連携の設定」で Webhook URL を登録し、通知を有効にすると送信できます。
+        </div>
+      {% endif %}
+      {% if request_form.non_field_errors %}
+        <div class="alert alert-danger py-2 small" role="alert">
+          {% for error in request_form.non_field_errors %}<div>{{ error }}</div>{% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="row g-3">
+        <div class="col-sm-4">
+          <label class="form-label" for="{{ request_form.period_start.id_for_label }}">対象期間 開始日</label>
+          {{ request_form.period_start }}
+        </div>
+        <div class="col-sm-4">
+          <label class="form-label" for="{{ request_form.period_end.id_for_label }}">対象期間 終了日</label>
+          {{ request_form.period_end }}
+        </div>
+        <div class="col-sm-4">
+          <label class="form-label" for="{{ request_form.deadline_date.id_for_label }}">提出期限日（任意）</label>
+          {{ request_form.deadline_date }}
+        </div>
+        <div class="col-12">
+          <label class="form-label" for="{{ request_form.message.id_for_label }}">ひとこと（任意）</label>
+          {{ request_form.message }}
+        </div>
+        <div class="col-12">
+          <div class="form-check">
+            {{ request_form.include_unsubmitted }}
+            <label class="form-check-label" for="{{ request_form.include_unsubmitted.id_for_label }}">
+              未提出メンバーの名前を載せる
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {% if setting.is_ready %}
+        <hr>
+        <h3 class="h6 mb-2">現在の未提出メンバー</h3>
+        <p class="small text-muted mb-1">
+          期間 {{ open_period.period_start }} 〜 {{ open_period.period_end }} で確定済みの希望がない人（メンバー{{ member_count }}名中）
+        </p>
+        {% if unsubmitted_members %}
+          <div class="d-flex flex-wrap gap-1">
+            {% for member in unsubmitted_members %}
+              <span class="badge text-bg-light border">{{ member.get_display_name }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="small text-success mb-0"><i class="bi bi-check-circle me-1"></i>全員提出済みです。</p>
+        {% endif %}
+      {% endif %}
+    </div>
+    <div class="card-footer bg-white d-flex flex-wrap gap-2">
+      <button type="submit" class="btn btn-primary" {% if not setting.is_ready %}disabled{% endif %}>
+        <i class="bi bi-send me-1"></i>Slackへ送信
+      </button>
+      <a class="btn btn-outline-secondary" href="{% url 'shift:summary' group.id %}">
+        <i class="bi bi-grid-3x3-gap me-1"></i>提出状況を見る
+      </a>
+    </div>
+  </form>
+
+  <form method="post" class="card mb-4">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="save">
+    <div class="card-header bg-white">
+      <h2 class="h6 mb-0"><i class="bi bi-slack me-1"></i>Slack連携の設定</h2>
+    </div>
+    <div class="card-body">
+      {% if setting_form.non_field_errors %}
+        <div class="alert alert-danger py-2 small" role="alert">
+          {% for error in setting_form.non_field_errors %}<div>{{ error }}</div>{% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="form-check form-switch mb-3">
+        {{ setting_form.is_enabled }}
+        <label class="form-check-label fw-bold" for="{{ setting_form.is_enabled.id_for_label }}">
+          Slack通知を利用する
+        </label>
+        <div class="form-text">無効にすると、このグループからの通知を一切送りません。</div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label" for="{{ setting_form.webhook_url.id_for_label }}">
+          Incoming Webhook URL
+        </label>
+        {{ setting_form.webhook_url }}
+        <div class="form-text">{{ setting_form.webhook_url.help_text }}</div>
+        {% for error in setting_form.webhook_url.errors %}
+          <div class="text-danger small">{{ error }}</div>
+        {% endfor %}
+        {% if setting.webhook_url %}
+          <div class="form-check mt-2">
+            {{ setting_form.clear_webhook_url }}
+            <label class="form-check-label small" for="{{ setting_form.clear_webhook_url.id_for_label }}">
+              登録済みの Webhook URL を削除する
+            </label>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label" for="{{ setting_form.mention.id_for_label }}">メンション（任意）</label>
+        {{ setting_form.mention }}
+        <div class="form-text">
+          チャンネル全員を呼ぶなら <code>&lt;!channel&gt;</code>、オンラインの人だけなら <code>&lt;!here&gt;</code>。
+          シフト入力のお願いとリマインドの先頭に付きます。
+        </div>
+        {% for error in setting_form.mention.errors %}
+          <div class="text-danger small">{{ error }}</div>
+        {% endfor %}
+      </div>
+
+      <hr>
+      <h3 class="h6 mb-3">自動で送る通知</h3>
+
+      <div class="form-check form-switch mb-2">
+        {{ setting_form.notify_deadline_reminder }}
+        <label class="form-check-label" for="{{ setting_form.notify_deadline_reminder.id_for_label }}">
+          提出期限のリマインド
+        </label>
+      </div>
+      <div class="mb-3 ps-4" style="max-width: 16rem;">
+        <label class="form-label small mb-1" for="{{ setting_form.reminder_days_before.id_for_label }}">
+          期限の何日前に送るか
+        </label>
+        {{ setting_form.reminder_days_before }}
+        <div class="form-text">
+          1つの提出期限につき1回だけ送ります。定期実行（<code>send_shift_reminders</code>）の設定が必要です。
+        </div>
+        {% for error in setting_form.reminder_days_before.errors %}
+          <div class="text-danger small">{{ error }}</div>
+        {% endfor %}
+      </div>
+
+      <div class="form-check form-switch mb-3">
+        {{ setting_form.notify_shift_confirmed }}
+        <label class="form-check-label" for="{{ setting_form.notify_shift_confirmed.id_for_label }}">
+          メンバーがシフト希望を確定したとき
+        </label>
+        <div class="form-text">人数が多いと通知も多くなります。</div>
+      </div>
+
+      <div class="form-check form-switch mb-3">
+        {{ setting_form.notify_schedule_changed }}
+        <label class="form-check-label" for="{{ setting_form.notify_schedule_changed.id_for_label }}">
+          提出期限・開講スケジュールを変更したとき
+        </label>
+      </div>
+    </div>
+    <div class="card-footer bg-white d-flex flex-wrap gap-2">
+      <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>保存</button>
+    </div>
+  </form>
+
+  <div class="card">
+    <div class="card-body small">
+      <h2 class="h6 mb-2">Webhook URL の取り方</h2>
+      <ol class="mb-0 ps-3">
+        <li><a href="https://api.slack.com/apps" target="_blank" rel="noopener">Slack API</a> で App を作成する（Create New App → From scratch）。</li>
+        <li>Incoming Webhooks を有効にして、「Add New Webhook to Workspace」で通知先チャンネルを選ぶ。</li>
+        <li>発行された <code>https://hooks.slack.com/services/...</code> を上のフォームに貼り付けて保存する。</li>
+      </ol>
+    </div>
+  </div>
+{% endblock content %}

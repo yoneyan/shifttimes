@@ -21,7 +21,7 @@ from custom_auth.form import (
 )
 from custom_auth.models import UserGroup, User
 from custom_auth.models import TOTPDevice, UserActivateToken
-from shift.models import AttendanceSetting
+from shift.models import AttendanceSetting, SlackNotificationSetting
 
 
 @login_required
@@ -266,6 +266,7 @@ def group_admin_home(request, group_id: int):
         "is_free_granted": group.is_free_granted,
         "can_add_member": group.can_add_member(),
         "attendance_setting": AttendanceSetting.objects.filter(group=group).first(),
+        "slack_setting": SlackNotificationSetting.objects.filter(group=group).first(),
     }
     return render(request, "group/admin.html", context)
 
