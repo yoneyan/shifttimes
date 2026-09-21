@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block title %}LINE連携 | {% endblock %}
+{% block page_title %}LINE連携{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">LINEアカウントでログインできるようにします。</p>
+{% endblock %}
+{% block content %}
+  {% include 'includes/messages.html' %}
+
+  {% if not line_login_enabled %}
+    <div class="alert alert-secondary" role="alert">
+      このシステムではLINEログインが有効になっていません。
+    </div>
+  {% elif line_account %}
+    <div class="card mb-4">
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-3 mb-3">
+          {% if line_account.picture_url %}
+            <img src="{{ line_account.picture_url }}" alt="" width="48" height="48" class="rounded-circle">
+          {% endif %}
+          <div>
+            <h2 class="h6 mb-1">{{ line_account.display_name|default:"（表示名なし）" }}</h2>
+            <p class="small text-muted mb-0">連携日 {{ line_account.created_at|date:"Y/m/d H:i" }}</p>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <span class="badge text-bg-success">連携済み</span>
+          <span class="badge text-bg-secondary">
+            LINEでの最終ログイン {{ line_account.last_login_at|date:"Y/m/d H:i"|default:"-" }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-muted small">
+      連携を解除すると、LINEからのログインができなくなります。
+      ユーザ名とパスワードでのログインは引き続き使えます。
+    </p>
+    <form method="post" action="{% url 'custom_auth_line:unlink' %}"
+          onsubmit="return confirm('LINEアカウントの連携を解除します。よろしいですか？');">
+      {% csrf_token %}
+      <button class="btn btn-outline-danger" type="submit">
+        <i class="bi bi-link-45deg me-1"></i>連携を解除する
+      </button>
+    </form>
+  {% else %}
+    <div class="card mb-4">
+      <div class="card-body">
+        <h2 class="h6 mb-2">まだ連携されていません</h2>
+        <p class="text-muted small mb-0">
+          LINEアカウントを連携すると、次回からログイン画面の「LINEでログイン」が使えます。
+        </p>
+      </div>
+    </div>
+
+    <a class="btn btn-success" href="{% url 'custom_auth_line:link' %}">
+      <i class="bi bi-chat-dots me-1"></i>LINEアカウントを連携する
+    </a>
+  {% endif %}
+
+  <div class="mt-4">
+    <a class="small" href="{% url 'custom_auth:index' %}">アカウント情報に戻る</a>
+  </div>
+{% endblock content %}

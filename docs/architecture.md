@@ -7,7 +7,7 @@
 | アプリ | 役割 |
 |---|---|
 | `shifttimes` | プロジェクト設定、共通テンプレート、トップページ、ログイン、Slack 通知 |
-| `custom_auth` | ユーザ・グループ・権限・2 要素認証・サブスクリプション課金 |
+| `custom_auth` | ユーザ・グループ・権限・2 要素認証・LINE ログイン・サブスクリプション課金 |
 | `shift` | シフト希望、開講スケジュール、提出期限、勤怠管理 |
 | `notice` | 運営からのお知らせ |
 
@@ -37,6 +37,7 @@ User ──< UserGroup >── Group
 | `UserActivateToken` | アカウント有効化用のトークン |
 | `UserEmailVerify` | ログイン時のメール認証コード |
 | `TOTPDevice` | TOTP の秘密鍵。1 ユーザにつき最大 5 件 |
+| `LineAccount` | ユーザと LINE アカウントの連携（`OneToOne`）。`line_user_id` は一意 |
 
 `Group` のプラン関連のプロパティは次のとおりです。
 
@@ -95,6 +96,10 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 | `/login/` | `login` | ログイン |
 | `/logout/` | `logout` | ログアウト |
 | `/activate/<uuid>/` | `activate_user` | アカウント有効化 |
+| `/line/login/` | `custom_auth_line:login` | LINE ログインの開始 |
+| `/line/link/` | `custom_auth_line:link` | LINE 連携の開始（ログイン） |
+| `/line/callback/` | `custom_auth_line:callback` | LINE からのコールバック |
+| `/line/unlink/` | `custom_auth_line:unlink` | LINE 連携の解除（ログイン・POST） |
 | `/stripe/webhook/` | `stripe_webhook` | Stripe Webhook（CSRF 免除・POST のみ）※1 |
 | `/admin/` | | Django 管理画面 |
 
@@ -108,6 +113,7 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 | `password` | `custom_auth:password_change` |
 | `email` | `custom_auth:email_change` |
 | `edit` | `custom_auth:edit_profile` |
+| `line` | `custom_auth:line_account` |
 | `two_auth` | `custom_auth:list_two_auth` |
 | `two_auth/add` | `custom_auth:add_two_auth` |
 
@@ -189,6 +195,11 @@ if not user_group or not user_group.is_admin:
 `billing_enabled` / `onpremise_mode` / `site_name` を使います。
 `ONPREMISE_MODE` を直接見るのは `settings.py` とトップページの分岐だけです。
 
+LINE ログインの出し分けは `custom_auth.line.is_enabled()`（チャネル ID と
+シークレットが両方あるか）に集約し、テンプレートには同じコンテキスト
+プロセッサから `line_login_enabled` として渡します。課金と違って URL は
+常に登録されるため、無効なときはビューが案内を返します。
+
 ### タイムゾーン
 
 `USE_TZ = False` / `TIME_ZONE = "Asia/Tokyo"` です。
@@ -209,6 +220,18 @@ return timezone.make_naive(value, timezone.get_default_timezone())
 主要モデルには django-simple-history の `HistoricalRecords()` を付けています。
 `simple_history.middleware.HistoryRequestMiddleware` により、変更したユーザも
 記録されます。管理画面は `SimpleHistoryAdmin` を使うので履歴タブが出ます。
+
+### LINE ログイン
+
+`custom_auth/line.py`（LINE の API）と `custom_auth/line_views.py`（画面）に
+分かれています。詳細は [line-login.md](line-login.md) を参照してください。
+
+- 認可コードフロー。`state` と `nonce` はセッションに持ち、コールバックで
+  `state` を突き合わせたらその場で捨てる（再利用させない）
+- ID トークンの検証は LINE の `/oauth2/v2.1/verify` に任せる
+- 通信は標準ライブラリの `urllib`。失敗は `line.LineLoginError` にまとめ、
+  画面には日本語のメッセージだけを出す
+- **連携済みのユーザしかログインできない**。LINE から新規ユーザは作らない
 
 ### Slack 通知
 

@@ -536,3 +536,29 @@ class TOTPDevice(models.Model):
 
     def __str__(self):
         return "%d[%s]" % (self.id, self.user.username)
+
+
+class LineAccount(models.Model):
+    """ユーザと LINE アカウントの連携
+
+    LINE ログインは「連携済みのアカウントでログインする」ためだけに使う。
+    連携されていない LINE アカウントからは新規ユーザを作らない（ユーザの
+    作成はグループ管理者が行う運用のため）。
+    """
+
+    created_at = models.DateTimeField("作成日", default=timezone.now)
+    updated_at = models.DateTimeField("更新日", default=timezone.now)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name="ユーザ")
+    # LINE の ID トークンの sub。チャネルごとに払い出される一意な ID
+    line_user_id = models.CharField("LINEユーザID", max_length=100, unique=True)
+    display_name = models.CharField("LINE表示名", max_length=150, default="", blank=True)
+    picture_url = models.URLField("アイコンURL", max_length=500, default="", blank=True)
+    last_login_at = models.DateTimeField("LINEでの最終ログイン", blank=True, null=True)
+    history = HistoricalRecords()
+
+    class Meta:
+        verbose_name = "LINE連携"
+        verbose_name_plural = "LINE連携"
+
+    def __str__(self):
+        return f"{self.user.username}: {self.display_name or self.line_user_id}"

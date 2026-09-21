@@ -1,4 +1,8 @@
 import datetime
+import io
+import json
+import urllib.error
+import urllib.parse
 from unittest import mock, skipUnless
 
 import stripe
@@ -8,8 +12,8 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from custom_auth import billing_views
-from custom_auth.models import Group, UserGroup
+from custom_auth import billing_views, line
+from custom_auth.models import Group, LineAccount, UserGroup
 
 
 class GroupMemberViewTests(TestCase):
@@ -637,3 +641,274 @@ class StripeWebhookTests(TestCase):
         response = self._post({"type": "customer.created", "data": {"object": {"id": "cus_123"}}})
 
         self.assertEqual(response.status_code, 200)
+
+
+LINE_SETTINGS = {
+    "LINE_LOGIN_CHANNEL_ID": "1234567890",
+    "LINE_LOGIN_CHANNEL_SECRET": "channel-secret",
+    "SITE_URL": "https://example.com",
+}
+
+
+@override_settings(**LINE_SETTINGS)
+class LineLoginViewTests(TestCase):
+    """LINE ログイン。外部通信は custom_auth.line.fetch_profile を差し替えて止める"""
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create(
+            username="liner",
+            username_jp="連携ユーザ",
+            email="liner@example.com",
+            is_active=True,
+        )
+        self.other_user = user_model.objects.create(
+            username="other",
+            username_jp="別ユーザ",
+            email="other@example.com",
+            is_active=True,
+        )
+
+    def _start(self, url_name):
+        """認可 URL へのリダイレクトを踏んで、session に state を積ませる"""
+        response = self.client.get(reverse(url_name))
+        self.assertEqual(response.status_code, 302)
+        return self.client.session["line_oauth_state"]
+
+    def _callback(self, state, code="auth-code"):
+        return self.client.get(reverse("custom_auth_line:callback"),
+                               {"code": code, "state": state})
+
+    def test_login_start_redirects_to_line_with_state(self):
+        response = self.client.get(reverse("custom_auth_line:login"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith(line.AUTHORIZATION_URL))
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(response["Location"]).query)
+        self.assertEqual(query["client_id"], ["1234567890"])
+        self.assertEqual(query["redirect_uri"], ["https://example.com/line/callback/"])
+        self.assertEqual(query["state"], [self.client.session["line_oauth_state"]])
+        self.assertEqual(query["nonce"], [self.client.session["line_oauth_nonce"]])
+
+    @override_settings(LINE_LOGIN_CHANNEL_ID="", LINE_LOGIN_CHANNEL_SECRET="")
+    def test_login_start_is_refused_when_not_configured(self):
+        response = self.client.get(reverse("custom_auth_line:login"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "LINEログインは利用できません")
+
+    @override_settings(LINE_LOGIN_CHANNEL_ID="", LINE_LOGIN_CHANNEL_SECRET="")
+    def test_login_page_hides_the_button_when_not_configured(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertNotContains(response, "LINEでログイン")
+
+    def test_login_page_shows_the_button_when_configured(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertContains(response, "LINEでログイン")
+
+    @mock.patch("custom_auth.line.fetch_profile")
+    def test_linked_account_can_log_in(self, fetch_profile):
+        LineAccount.objects.create(user=self.user, line_user_id="U0001")
+        fetch_profile.return_value = {
+            "line_user_id": "U0001", "display_name": "新しい名前", "picture_url": "",
+        }
+        state = self._start("custom_auth_line:login")
+
+        response = self._callback(state)
+
+        self.assertRedirects(response, "/", fetch_redirect_response=False)
+        self.assertEqual(self.client.session["_auth_user_id"], str(self.user.id))
+        account = LineAccount.objects.get(user=self.user)
+        self.assertEqual(account.display_name, "新しい名前")
+        self.assertIsNotNone(account.last_login_at)
+
+    @mock.patch("custom_auth.line.fetch_profile")
+    def test_unlinked_account_is_not_signed_up(self, fetch_profile):
+        fetch_profile.return_value = {
+            "line_user_id": "U-unknown", "display_name": "未連携", "picture_url": "",
+        }
+        state = self._start("custom_auth_line:login")
+
+        response = self._callback(state)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "連携されていません")
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertEqual(get_user_model().objects.count(), 2)
+
+    @mock.patch("custom_auth.line.fetch_profile")
+    def test_inactive_user_cannot_log_in(self, fetch_profile):
+        self.user.is_active = False
+        self.user.save()
+        LineAccount.objects.create(user=self.user, line_user_id="U0001")
+        fetch_profile.return_value = {
+            "line_user_id": "U0001", "display_name": "", "picture_url": "",
+        }
+        state = self._start("custom_auth_line:login")
+
+        response = self._callback(state)
+
+        self.assertContains(response, "有効化されていません")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    @mock.patch("custom_auth.line.fetch_profile")
+    def test_callback_rejects_a_mismatched_state(self, fetch_profile):
+        LineAccount.objects.create(user=self.user, line_user_id="U0001")
+        self._start("custom_auth_line:login")
+
+        response = self._callback("forged-state")
+
+        self.assertContains(response, "セッションが無効です")
+        self.assertNotIn("_auth_user_id", self.client.session)
+        fetch_profile.assert_not_called()
+
+    @mock.patch("custom_auth.line.fetch_profile")
+    def test_state_cannot_be_replayed(self, fetch_profile):
+        LineAccount.objects.create(user=self.user, line_user_id="U0001")
+        fetch_profile.return_value = {
+            "line_user_id": "U0001", "display_name": "", "picture_url": "",
+        }
+        state = self._start("custom_auth_line:login")
+        self._callback(state)
+        self.client.logout()
+
+        response = self._callback(state)
+
+        self.assertContains(response, "セッションが無効です")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    @mock.patch("custom_auth.line.fetch_profile")
+    def test_callback_reports_a_line_side_failure(self, fetch_profile):
+        fetch_profile.side_effect = line.LineLoginError("LINEとの通信に失敗しました。")
+        state = self._start("custom_auth_line:login")
+
+        response = self._callback(state)
+
+        self.assertContains(response, "LINEとの通信に失敗しました。")
+
+    def test_callback_reports_a_cancelled_consent(self):
+        state = self._start("custom_auth_line:login")
+
+        response = self.client.get(reverse("custom_auth_line:callback"),
+                                   {"error": "access_denied", "state": state})
+
+        self.assertContains(response, "中断されました")
+
+    @mock.patch("custom_auth.line.fetch_profile")
+    def test_logged_in_user_can_link_an_account(self, fetch_profile):
+        self.client.force_login(self.user)
+        fetch_profile.return_value = {
+            "line_user_id": "U0001", "display_name": "たろう", "picture_url": "https://img/1",
+        }
+        state = self._start("custom_auth_line:link")
+
+        response = self._callback(state)
+
+        self.assertRedirects(response, reverse("custom_auth:line_account"))
+        account = LineAccount.objects.get(user=self.user)
+        self.assertEqual(account.line_user_id, "U0001")
+        self.assertEqual(account.display_name, "たろう")
+
+    @mock.patch("custom_auth.line.fetch_profile")
+    def test_line_account_cannot_be_linked_to_two_users(self, fetch_profile):
+        LineAccount.objects.create(user=self.other_user, line_user_id="U0001")
+        self.client.force_login(self.user)
+        fetch_profile.return_value = {
+            "line_user_id": "U0001", "display_name": "", "picture_url": "",
+        }
+        state = self._start("custom_auth_line:link")
+
+        response = self._callback(state)
+
+        self.assertContains(response, "別のユーザに連携済み")
+        self.assertFalse(LineAccount.objects.filter(user=self.user).exists())
+
+    def test_link_requires_login(self):
+        response = self.client.get(reverse("custom_auth_line:link"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("login"), response["Location"])
+
+    def test_unlink_removes_the_link(self):
+        LineAccount.objects.create(user=self.user, line_user_id="U0001")
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("custom_auth_line:unlink"))
+
+        self.assertRedirects(response, reverse("custom_auth:line_account"))
+        self.assertFalse(LineAccount.objects.filter(user=self.user).exists())
+
+    def test_unlink_rejects_get(self):
+        LineAccount.objects.create(user=self.user, line_user_id="U0001")
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("custom_auth_line:unlink"))
+
+        self.assertEqual(response.status_code, 405)
+        self.assertTrue(LineAccount.objects.filter(user=self.user).exists())
+
+    def test_account_page_shows_the_link_status(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("custom_auth:line_account"))
+
+        self.assertContains(response, "まだ連携されていません")
+
+        LineAccount.objects.create(user=self.user, line_user_id="U0001", display_name="たろう")
+        response = self.client.get(reverse("custom_auth:line_account"))
+
+        self.assertContains(response, "連携済み")
+        self.assertContains(response, "たろう")
+
+
+@override_settings(**LINE_SETTINGS)
+class LineClientTests(TestCase):
+    """LINE の API を叩く部分。urlopen を差し替えてネットワークには出ない"""
+
+    def _response(self, payload):
+        response = mock.MagicMock()
+        response.read.return_value = json.dumps(payload).encode()
+        response.__enter__.return_value = response
+        return response
+
+    @mock.patch("urllib.request.urlopen")
+    def test_fetch_profile_exchanges_the_code_and_verifies_the_id_token(self, urlopen):
+        urlopen.side_effect = [
+            self._response({"access_token": "at", "id_token": "it"}),
+            self._response({"sub": "U0001", "name": "たろう", "picture": "https://img/1"}),
+        ]
+
+        profile = line.fetch_profile("auth-code", "nonce-value")
+
+        self.assertEqual(profile, {
+            "line_user_id": "U0001", "display_name": "たろう", "picture_url": "https://img/1",
+        })
+        token_request, verify_request = (call.args[0] for call in urlopen.call_args_list)
+        self.assertEqual(token_request.full_url, line.TOKEN_URL)
+        token_body = urllib.parse.parse_qs(token_request.data.decode())
+        self.assertEqual(token_body["code"], ["auth-code"])
+        self.assertEqual(token_body["client_secret"], ["channel-secret"])
+        self.assertEqual(token_body["redirect_uri"], ["https://example.com/line/callback/"])
+        self.assertEqual(verify_request.full_url, line.VERIFY_URL)
+        verify_body = urllib.parse.parse_qs(verify_request.data.decode())
+        self.assertEqual(verify_body["id_token"], ["it"])
+        # nonce は LINE 側で ID トークンと突き合わせてもらう
+        self.assertEqual(verify_body["nonce"], ["nonce-value"])
+
+    @mock.patch("urllib.request.urlopen")
+    def test_http_error_becomes_a_line_login_error(self, urlopen):
+        urlopen.side_effect = urllib.error.HTTPError(
+            line.TOKEN_URL, 400, "Bad Request", {}, io.BytesIO(b'{"error":"invalid_grant"}')
+        )
+
+        with self.assertRaises(line.LineLoginError):
+            line.fetch_profile("auth-code", "nonce-value")
+
+    @mock.patch("urllib.request.urlopen")
+    def test_a_token_response_without_id_token_is_an_error(self, urlopen):
+        urlopen.return_value = self._response({"access_token": "at"})
+
+        with self.assertRaises(line.LineLoginError):
+            line.fetch_profile("auth-code", "nonce-value")

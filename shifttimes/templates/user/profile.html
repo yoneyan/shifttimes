@@ -34,6 +34,11 @@
       <a class="btn btn-outline-primary" href="{% url 'custom_auth:password_change' %}">
         <i class="bi bi-key me-1"></i>パスワード変更
       </a>
+      {% if line_login_enabled %}
+        <a class="btn btn-outline-success" href="{% url 'custom_auth:line_account' %}">
+          <i class="bi bi-chat-dots me-1"></i>LINE連携
+        </a>
+      {% endif %}
     </div>
   </section>
 

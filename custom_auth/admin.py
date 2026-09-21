@@ -2,7 +2,7 @@ from django.conf import settings
 from django.contrib import admin
 from simple_history.admin import SimpleHistoryAdmin
 
-from custom_auth.models import Group, TOTPDevice, User, UserActivateToken
+from custom_auth.models import Group, LineAccount, TOTPDevice, User, UserActivateToken
 
 
 class TermInlineUserAdmin(admin.TabularInline):
@@ -174,4 +174,23 @@ class TOTPDevice(admin.ModelAdmin):
         "id",
         "is_active",
         "title",
+    )
+
+
+@admin.register(LineAccount)
+class LineAccount(SimpleHistoryAdmin):
+    fieldsets = (
+        (None, {"fields": ("user", "line_user_id", "display_name", "picture_url")}),
+        ("Important dates", {"fields": ("last_login_at", "created_at", "updated_at")}),
+    )
+    list_display = ("user", "display_name", "last_login_at")
+    search_fields = ("user__username", "user__username_jp", "line_user_id", "display_name")
+    readonly_fields = (
+        # LINE から取得した値なので管理画面からは編集させない
+        "line_user_id",
+        "display_name",
+        "picture_url",
+        "last_login_at",
+        "created_at",
+        "updated_at",
     )

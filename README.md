@@ -19,6 +19,7 @@
 | Slack 通知 | グループごとに Incoming Webhook を登録し、シフト入力のお願いを送信。提出期限のリマインドやシフト確定の自動通知にも対応 |
 | お知らせ | 運営からの通知を掲示。運営は通知管理ページから掲示期間つきで追加・編集できる |
 | 認証 | メールによるアカウント有効化、パスワードリセット、TOTP による 2 要素認証 |
+| LINE ログイン | LINE アカウントを連携すると、次回からログイン画面の「LINEでログイン」が使える。連携済みのユーザ専用で、LINE から新規ユーザは作られない |
 
 ## 技術スタック
 
@@ -159,6 +160,18 @@ uv run ruff check .
 | `USER_LOGIN_VERIFY_EMAIL_EXPIRED_MINUTES` | `30` | メール認証コードの有効分数 |
 | `SIGN_UP_EXPIRED_DAYS` | `7` | 招待キーの有効日数 |
 
+### LINE ログイン
+
+| 変数 | 既定値 | 説明 |
+|---|---|---|
+| `LINE_LOGIN_CHANNEL_ID` | 空 | LINE ログインチャネルのチャネル ID |
+| `LINE_LOGIN_CHANNEL_SECRET` | 空 | チャネルシークレット |
+
+両方設定されているときだけ機能が有効になります。LINE Developers には
+`<SITE_URL>/line/callback/` をコールバック URL として登録してください。
+メールアドレス取得権限の申請は不要です。詳細は
+[docs/line-login.md](docs/line-login.md) を参照してください。
+
 ### Stripe / 課金
 
 | 変数 | 既定値 | 説明 |
@@ -196,6 +209,7 @@ docker run -p 8010:8010 --env-file .env shifttimes
 | [docs/architecture.md](docs/architecture.md) | アプリ構成、モデル、URL 一覧、設計上の約束ごと |
 | [docs/billing.md](docs/billing.md) | Stripe の設定手順、Webhook、無償付与の運用、障害時の挙動 |
 | [docs/onpremise.md](docs/onpremise.md) | オンプレミスモード（課金なしの自前運用）の設定と挙動 |
+| [docs/line-login.md](docs/line-login.md) | LINE ログインのセットアップ手順と実装のしくみ |
 | [docs/user-guide.md](docs/user-guide.md) | グループ管理者・メンバー向けの操作手順 |
 
 ## ライセンス

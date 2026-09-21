@@ -227,6 +227,11 @@ if ONPREMISE_MODE:
     STRIPE_PUBLISHABLE_KEY = ""
     STRIPE_WEBHOOK_SECRET = ""
 
+# LINE ログイン。チャネル ID とシークレットが両方揃っているときだけ画面に導線が出る。
+# 有効・無効の判定は custom_auth.line.is_enabled() に集約している
+LINE_LOGIN_CHANNEL_ID = os.environ.get("LINE_LOGIN_CHANNEL_ID", "")
+LINE_LOGIN_CHANNEL_SECRET = os.environ.get("LINE_LOGIN_CHANNEL_SECRET", "")
+
 # 認証アプリに表示されるサービス名（TOTP の issuer）
 APP_NAME = os.environ.get("APP_NAME", "ShiftTimes")
 

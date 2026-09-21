@@ -32,6 +32,7 @@ urlpatterns = [
     path("shift/", include("shift.urls")),
     path("activate/<uuid:activate_token>/", activate_user, name="activate_user"),
     path("profile/", include("custom_auth.urls")),
+    path("line/", include("custom_auth.line_urls")),
     path("group/", include("custom_auth.group_urls")),
     path('admin/', admin.site.urls),
 ]

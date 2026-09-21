@@ -31,6 +31,20 @@
           <button class="btn btn-primary w-100" type="submit">ログイン</button>
         </form>
 
+        {% if line_login_enabled %}
+          <div class="d-flex align-items-center my-3">
+            <hr class="flex-grow-1">
+            <span class="px-2 small text-muted">または</span>
+            <hr class="flex-grow-1">
+          </div>
+          <a class="btn btn-success w-100" href="{% url 'custom_auth_line:login' %}">
+            <i class="bi bi-chat-dots me-1"></i>LINEでログイン
+          </a>
+          <p class="text-muted small text-center mt-2 mb-0">
+            アカウント情報からLINE連携を済ませた方が使えます。
+          </p>
+        {% endif %}
+
         <div class="text-center mt-3">
           <a href="{% url 'custom_auth_forget:index' %}" class="small">パスワードをお忘れですか？</a>
         </div>
