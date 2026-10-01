@@ -18,10 +18,10 @@
           <div class="card-body">
             <h2 class="h6 mb-1">{{ card.group.name_jp }}</h2>
             <p class="small text-muted mb-2">{{ card.group.name }}</p>
-            {% if card.record.is_working %}
-              <span class="badge text-bg-success">勤務中（{{ card.record.start_time|time:'H:i' }}〜）</span>
-            {% elif card.record.start_time and card.record.end_time %}
-              <span class="badge text-bg-secondary">本日は退勤済み（実働 {{ card.record.worked_time_display }}）</span>
+            {% if card.open_record %}
+              <span class="badge text-bg-success">勤務中（{{ card.open_record.start_time|time:'H:i' }}〜）</span>
+            {% elif card.worked_display %}
+              <span class="badge text-bg-secondary">本日は退勤済み（実働 {{ card.worked_display }}）</span>
             {% else %}
               <span class="badge text-bg-light text-dark">本日は未打刻</span>
             {% endif %}

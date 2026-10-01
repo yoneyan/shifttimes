@@ -1,0 +1,37 @@
+{# 勤怠 1 件の入力欄（メンバーの手動入力と管理者の修正で共通）。prefix で要素の id を分ける #}
+<div class="row g-3">
+  {% if work_types %}
+    <div class="col-12">
+      <label class="form-label small fw-bold" for="{{ prefix }}WorkType">仕事内容</label>
+      <select class="form-select" id="{{ prefix }}WorkType" name="work_type"
+              {% if has_active_work_types %}required{% endif %}>
+        <option value="">選択してください</option>
+        {% for work_type in work_types %}
+          {# 無効にした仕事内容は、その仕事内容の勤怠を編集するときだけ表示する #}
+          <option value="{{ work_type.id }}" {% if not work_type.is_active %}data-inactive="1" hidden{% endif %}>
+            {{ work_type.display_label }}{% if not work_type.is_active %}（無効）{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  {% endif %}
+  <div class="col-6">
+    <label class="form-label small fw-bold" for="{{ prefix }}Start">出勤時刻</label>
+    <input type="time" class="form-control" id="{{ prefix }}Start" name="start_time">
+  </div>
+  <div class="col-6">
+    <label class="form-label small fw-bold" for="{{ prefix }}End">退勤時刻</label>
+    <input type="time" class="form-control" id="{{ prefix }}End" name="end_time">
+    <div class="form-text">出勤より前の時刻は翌日の退勤として扱います。</div>
+  </div>
+  <div class="col-6">
+    <label class="form-label small fw-bold" for="{{ prefix }}Break">休憩（分）</label>
+    <input type="number" class="form-control" id="{{ prefix }}Break" name="break_minutes"
+           min="0" step="5" placeholder="0">
+  </div>
+  <div class="col-12">
+    <label class="form-label small fw-bold" for="{{ prefix }}Note">メモ（任意）</label>
+    <input type="text" class="form-control" id="{{ prefix }}Note" name="note" maxlength="200"
+           placeholder="例: 直行直帰">
+  </div>
+</div>

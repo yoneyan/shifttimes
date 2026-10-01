@@ -1,4 +1,5 @@
 from django import forms
+from django.db.models import Q
 
 from shift.models import (
     AttendanceRecord,
@@ -10,6 +11,8 @@ from shift.models import (
     SlackNotificationSetting,
     TimeSlot,
     WEEKDAY_CHOICES,
+    WorkType,
+    find_overlapping_record,
 )
 
 
@@ -131,23 +134,70 @@ class AttendanceSettingForm(forms.ModelForm):
         return cleaned_data
 
 
+class WorkTypeForm(forms.ModelForm):
+    """勤怠の仕事内容と時給"""
+
+    apply_from = forms.DateField(
+        label="登録済みの勤怠への反映", required=False,
+        widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}),
+        help_text="日付を指定すると、その日以降の勤怠にも新しい時給を反映します。",
+    )
+
+    class Meta:
+        model = WorkType
+        fields = ("name", "hourly_rate", "is_active", "display_order")
+        widgets = {
+            "name": forms.TextInput(attrs={"class": "form-control", "placeholder": "例: 授業、事務"}),
+            "hourly_rate": forms.NumberInput(attrs={"class": "form-control", "min": 0, "step": 1}),
+            "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "display_order": forms.NumberInput(attrs={"class": "form-control", "min": 0}),
+        }
+
+    def __init__(self, *args, group=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.group = group
+
+    def clean_name(self):
+        name = self.cleaned_data["name"]
+        if self.group is None:
+            return name
+
+        work_types = WorkType.objects.filter(group=self.group, name=name)
+        if self.instance.pk:
+            work_types = work_types.exclude(pk=self.instance.pk)
+        if work_types.exists():
+            raise forms.ValidationError("同じ名前の仕事内容がすでにあります。")
+        return name
+
+
 class AttendanceRecordForm(forms.ModelForm):
-    """1日ぶんの勤怠実績（手動入力・管理者による修正の共通フォーム）"""
+    """1件ぶんの勤怠実績（手動入力・管理者による修正の共通フォーム）
+
+    ``other_records`` には同じ人・同じ日のほかの勤怠を渡す。時間帯が重なる登録を弾く。
+    """
 
     class Meta:
         model = AttendanceRecord
-        fields = ("start_time", "end_time", "break_minutes", "note")
+        fields = ("work_type", "start_time", "end_time", "break_minutes", "note")
         widgets = {
+            "work_type": forms.Select(attrs={"class": "form-select"}),
             "start_time": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
             "end_time": forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
             "break_minutes": forms.NumberInput(attrs={"class": "form-control", "min": 0, "step": 5}),
             "note": forms.TextInput(attrs={"class": "form-control", "maxlength": 200}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, group=None, other_records=(), **kwargs):
         super().__init__(*args, **kwargs)
+        self.other_records = list(other_records)
         self.fields["break_minutes"].required = False
         self.fields["note"].required = False
+        # 選べるのは有効な仕事内容だけ。無効にした仕事内容でも、登録済みの勤怠はそのまま保存し直せるようにする
+        self.fields["work_type"].queryset = WorkType.objects.filter(group=group).filter(
+            Q(is_active=True) | Q(pk=self.instance.work_type_id)
+        )
+        self.fields["work_type"].required = False
+        self.work_type_required = WorkType.objects.filter(group=group, is_active=True).exists()
 
     def clean_break_minutes(self):
         return self.cleaned_data.get("break_minutes") or 0
@@ -161,6 +211,10 @@ class AttendanceRecordForm(forms.ModelForm):
         if end_time and not start_time:
             raise forms.ValidationError("退勤時刻を入力する場合は出勤時刻も入力してください。")
 
+        # 仕事内容が用意されているグループでは、金額を計算できるように必ず選ばせる
+        if start_time and self.work_type_required and not cleaned_data.get("work_type"):
+            raise forms.ValidationError("仕事内容を選択してください。")
+
         if start_time and end_time:
             start = start_time.hour * 60 + start_time.minute
             end = end_time.hour * 60 + end_time.minute
@@ -168,6 +222,13 @@ class AttendanceRecordForm(forms.ModelForm):
                 end += 24 * 60
             if break_minutes > end - start:
                 raise forms.ValidationError("休憩時間が勤務時間を超えています。")
+
+        overlapping = find_overlapping_record(self.other_records, start_time, end_time)
+        if overlapping is not None:
+            end_label = overlapping.end_time.strftime("%H:%M") if overlapping.end_time else ""
+            raise forms.ValidationError(
+                f"ほかの勤怠（{overlapping.start_time:%H:%M}〜{end_label}）と時間が重なっています。"
+            )
 
         return cleaned_data
 

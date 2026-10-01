@@ -27,4 +27,8 @@ urlpatterns = [
          name="attendance_settings"),
     path("attendance/<int:group_id>/summary/", attendance_views.attendance_summary,
          name="attendance_summary"),
+    path("attendance/<int:group_id>/summary/csv/", attendance_views.attendance_summary_csv,
+         name="attendance_summary_csv"),
+    path("attendance/<int:group_id>/work-types/<int:work_type_id>/delete/", attendance_views.work_type_delete,
+         name="work_type_delete"),
 ]

@@ -1,0 +1,9 @@
+{# 勤怠一覧表の日付セルの中身（day を受け取る） #}
+<span class="{% if day.is_sunday %}attendance-date-sun{% elif day.is_saturday %}attendance-date-sat{% endif %}">
+  {{ day.work_date|date:'j' }}日({{ day.work_date|date:'D' }})
+</span>
+{% if day.opening_schedule %}
+  <span class="badge text-bg-light text-muted fw-normal">
+    {{ day.opening_schedule.schedule_type.name|truncatechars:6 }}
+  </span>
+{% endif %}

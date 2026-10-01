@@ -10,6 +10,7 @@ from shift.models import (
     ShiftEntry,
     SlackNotificationSetting,
     TimeSlot,
+    WorkType,
 )
 
 
@@ -89,16 +90,29 @@ class AttendanceSettingAdmin(SimpleHistoryAdmin):
     readonly_fields = ("created_at", "updated_at")
 
 
+@admin.register(WorkType)
+class WorkTypeAdmin(SimpleHistoryAdmin):
+    fieldsets = (
+        (None, {"fields": ("group", "name", "hourly_rate", "is_active", "display_order")}),
+        ("audit", {"fields": ("created_at", "updated_at")}),
+    )
+    list_display = ("id", "group", "name", "hourly_rate", "is_active", "display_order", "updated_at")
+    list_filter = ("group", "is_active")
+    search_fields = ("name", "group__name")
+    readonly_fields = ("created_at", "updated_at")
+
+
 @admin.register(AttendanceRecord)
 class AttendanceRecordAdmin(SimpleHistoryAdmin):
     fieldsets = (
         (None, {"fields": ("group", "user", "work_date")}),
-        ("info", {"fields": ("start_time", "end_time", "break_minutes", "source", "note")}),
+        ("info", {"fields": ("work_type", "hourly_rate", "start_time", "end_time", "break_minutes", "source",
+                             "note")}),
         ("audit", {"fields": ("created_at", "updated_at")}),
     )
-    list_display = ("id", "group", "user", "work_date", "start_time", "end_time", "break_minutes",
-                    "source", "updated_at")
-    list_filter = ("group", "source", "work_date")
+    list_display = ("id", "group", "user", "work_date", "work_type", "start_time", "end_time", "break_minutes",
+                    "hourly_rate", "source", "updated_at")
+    list_filter = ("group", "source", "work_type", "work_date")
     search_fields = ("user__username", "group__name", "note")
     readonly_fields = ("created_at", "updated_at")
 

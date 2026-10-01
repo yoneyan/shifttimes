@@ -60,7 +60,8 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
       ──< ShiftDeadline
       ──< TimeSlot
       ──< ShiftEntry >── TimeSlot
-      ──< AttendanceRecord
+      ──< WorkType
+      ──< AttendanceRecord >── WorkType
       ──1 AttendanceSetting
       ──1 SlackNotificationSetting
 ```
@@ -73,12 +74,25 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 | `ShiftEntry` | シフト希望。`(group, user, work_date, time_slot)` が一意。`is_draft` で下書き管理 |
 | `ShiftDeadline` | 対象期間（`period_start`〜`period_end`）と提出期限 |
 | `AttendanceSetting` | グループごとの勤怠設定（`OneToOne`）。機能の有効・無効と入力方法の許可 |
-| `AttendanceRecord` | 1 日ぶんの勤怠。`(group, user, work_date)` が一意 |
+| `WorkType` | グループごとの勤怠の仕事内容と時給（円）。`(group, name)` が一意。勤怠が登録済みのものは削除不可（`PROTECT`） |
+| `AttendanceRecord` | 勤怠 1 件。同じ日に何件でも登録できる（時間帯の重なりはフォームで弾く）。`work_type` と、その時点の時給を写した `hourly_rate` を持つ |
 | `SlackNotificationSetting` | グループごとの Slack 通知設定（`OneToOne`）。Webhook URL と通知ごとの有効・無効 |
 
 `ShiftEntry.status` は `available`（勤務可能）/ `unavailable`（勤務不可）/
 `maybe`（要相談）の 3 値です。
 `AttendanceRecord.source` は `manual`（手動入力）/ `clock`（打刻）です。
+
+勤怠の金額は `AttendanceRecord.amount`（実働分 × `hourly_rate` ÷ 60、1 円未満は四捨五入）で、
+集計は勤怠ごとの金額を足し上げます。`hourly_rate` は仕事内容を選んだ時点の
+`WorkType.hourly_rate` の写しなので、時給を変えても登録済みの勤怠の金額は変わりません。
+写し直すのは次のときだけです。
+
+- 勤怠を新しく登録したとき、勤怠の仕事内容を変えたとき（`AttendanceRecord.apply_work_type()`）
+- 勤怠設定で仕事内容を保存するときに「反映開始日」を指定したとき（その日以降の勤怠を 1 件ずつ保存し直す）
+
+勤怠集計の CSV は Excel でそのまま開けるように UTF-8（BOM 付き）で出力します。
+メモや名前など利用者が入力した文字列は、`=` `+` `-` `@` などで始まる場合に先頭へ `'` を付け、
+表計算ソフトで数式として実行されないようにしています（`attendance_views._csv_text()`）。
 
 ### notice
 
@@ -164,6 +178,8 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 | `attendance/admin/` | `attendance_admin_index` | 勤怠のグループ選択（管理者） |
 | `attendance/<id>/settings/` | `attendance_settings` | 勤怠設定（管理者） |
 | `attendance/<id>/summary/` | `attendance_summary` | 勤怠集計（管理者） |
+| `attendance/<id>/summary/csv/` | `attendance_summary_csv` | 勤怠集計の CSV（管理者。`kind=records` 明細 / `kind=members` メンバー別、`month=YYYY-MM`） |
+| `attendance/<id>/work-types/<id>/delete/` | `work_type_delete` | 仕事内容の削除（管理者・POST） |
 
 ### その他
 
@@ -274,6 +290,7 @@ Webhook URL は `getattr(settings, "SLACK_WEBHOOK_URL_LOG", "")` で読むため
   `page_actions` / `content` のブロックを埋める
 - Bootstrap 5 と Bootstrap Icons を CDN から読み込む
 - 完了は `done.html`、エラーは `error.html` に `text` を渡して表示する
+- `messages.error()` は `MESSAGE_TAGS` で Bootstrap の `alert-danger` に対応させている
 
 ### コンテキストプロセッサ
 

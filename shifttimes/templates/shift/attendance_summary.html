@@ -42,6 +42,7 @@
     }
 
     .att-table thead .col-total { background: #fff9c4; }
+    .att-table .col-amount { text-align: right; }
 
     .att-table .col-date {
       min-width: 3.1rem;
@@ -56,6 +57,11 @@
     .att-table td.att-cell:hover { background: #e7f1ff; }
     .att-cell-empty { color: #ced4da; }
     .att-cell-working { color: #198754; font-weight: 700; }
+    .att-cell-count { color: #6c757d; font-size: .65rem; }
+
+    .att-breakdown td,
+    .att-breakdown th { white-space: nowrap; }
+    .att-breakdown .att-breakdown-amount { color: #6c757d; display: block; font-size: .75rem; }
   </style>
 {% endblock extrahead %}
 
@@ -86,8 +92,39 @@
 
   {% include 'shift/_month_nav.html' %}
 
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+    <div class="d-flex flex-wrap gap-2">
+      <span class="badge text-bg-dark">実働合計 {{ month_total_display|default:'0:00' }}</span>
+      {% if work_types %}
+        <span class="badge text-bg-success">金額合計 {{ month_total_amount_display }}</span>
+      {% endif %}
+    </div>
+    <div class="dropdown">
+      <button class="btn btn-outline-success btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown"
+              aria-expanded="false">
+        <i class="bi bi-filetype-csv me-1"></i>CSVダウンロード
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li>
+          <a class="dropdown-item" href="{{ csv_url }}?month={{ current_month_value }}&amp;kind=records">
+            勤怠の明細
+            <div class="small text-muted">1件ずつ（出勤・退勤・仕事内容{% if work_types %}・金額{% endif %}）</div>
+          </a>
+        </li>
+        <li>
+          <a class="dropdown-item" href="{{ csv_url }}?month={{ current_month_value }}&amp;kind=members">
+            メンバー別の集計
+            <div class="small text-muted">勤務日数・実働{% if work_types %}・金額{% endif %}と仕事内容ごとの内訳</div>
+          </a>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li><span class="dropdown-item-text small text-muted">{{ current_month|date:'Y年n月' }}ぶん／Excel で開けます</span></li>
+      </ul>
+    </div>
+  </div>
+
   <p class="small text-muted mb-2">
-    セルをタップすると、そのメンバーの勤怠を修正できます。表示は「実働時間（休憩を除く）」です。
+    セルをタップすると、そのメンバーのその日の勤怠を追加・修正・削除できます。表示は「実働時間（休憩を除く）」の日ごとの合計です。
   </p>
 
   <div class="att-wrap mb-4">
@@ -97,6 +134,7 @@
         <th scope="col" class="col-name">メンバー</th>
         <th scope="col" class="col-total">日数</th>
         <th scope="col" class="col-total">実働</th>
+        {% if work_types %}<th scope="col" class="col-total">金額</th>{% endif %}
         {% for header in date_headers %}
           <th scope="col"
               class="col-date {% if header.is_sunday %}col-sun{% elif header.is_saturday %}col-sat{% endif %} {% if header.is_today %}col-today{% endif %}"
@@ -113,22 +151,19 @@
           <th scope="row" class="col-name">{{ row.member.get_display_name }}</th>
           <td class="col-total">{{ row.totals.worked_days }}</td>
           <td class="col-total">{{ row.totals.total_display|default:'0:00' }}</td>
+          {% if work_types %}<td class="col-total col-amount">{{ row.totals.total_amount_display }}</td>{% endif %}
           {% for cell in row.cells %}
             <td class="col-date att-cell {% if cell.is_sunday %}col-sun{% elif cell.is_saturday %}col-sat{% endif %}"
                 data-user-id="{{ row.member.id }}"
                 data-member="{{ row.member.get_display_name }}"
                 data-date="{{ cell.work_date|date:'Y-m-d' }}"
                 data-label="{{ cell.work_date|date:'n月j日 (D)' }}"
-                data-start="{{ cell.record.start_time|time:'H:i' }}"
-                data-end="{{ cell.record.end_time|time:'H:i' }}"
-                data-break-minutes="{{ cell.record.break_minutes|default_if_none:'' }}"
-                data-note="{{ cell.record.note|default:'' }}"
-                {% if cell.record %}
-                title="{{ cell.record.start_time|time:'H:i'|default:'--:--' }}〜{{ cell.record.end_time|time:'H:i'|default:'--:--' }}{% if cell.record.break_minutes %} 休憩{{ cell.record.break_minutes }}分{% endif %}{% if cell.record.note %} / {{ cell.record.note }}{% endif %}"
+                {% if cell.records %}
+                title="{% for record in cell.records %}{% if record.work_type %}{{ record.work_type.name }} {% endif %}{{ record.start_time|time:'H:i'|default:'--:--' }}〜{{ record.end_time|time:'H:i'|default:'--:--' }}{% if record.break_minutes %} 休憩{{ record.break_minutes }}分{% endif %}{% if record.note %} / {{ record.note }}{% endif %}{% if not forloop.last %}&#10;{% endif %}{% endfor %}"
                 {% endif %}>
-              {% if cell.record.worked_time_display %}
-                {{ cell.record.worked_time_display }}
-              {% elif cell.record.is_working %}
+              {% if cell.worked_display %}
+                {{ cell.worked_display }}{% if cell.records|length > 1 %}<sup class="att-cell-count">×{{ cell.records|length }}</sup>{% endif %}
+              {% elif cell.is_working %}
                 <span class="att-cell-working">●</span>
               {% else %}
                 <span class="att-cell-empty">-</span>
@@ -138,84 +173,240 @@
         </tr>
       {% empty %}
         <tr>
-          <td colspan="3" class="text-muted py-4">メンバーがいません。</td>
+          <td colspan="{% if work_types %}4{% else %}3{% endif %}" class="text-muted py-4">メンバーがいません。</td>
         </tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
 
+  {# ===== 仕事内容別の集計 ===== #}
+  {% if work_types and breakdown.columns %}
+    <section class="mb-4">
+      <h2 class="h6 mb-2">仕事内容別の集計</h2>
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered small att-breakdown w-auto">
+          <thead class="table-light">
+          <tr>
+            <th scope="col">メンバー</th>
+            {% for work_type in breakdown.columns %}
+              <th scope="col" class="text-end">
+                {% if work_type %}{{ work_type.name }}{% else %}<span class="text-muted">未設定</span>{% endif %}
+              </th>
+            {% endfor %}
+            <th scope="col" class="text-end">合計</th>
+          </tr>
+          </thead>
+          <tbody>
+          {% for row in breakdown.rows %}
+            <tr>
+              <th scope="row" class="fw-normal">{{ row.member.get_display_name }}</th>
+              {% for item in row.cells %}
+                <td class="text-end">
+                  {% if item %}
+                    {{ item.time_display }}
+                    <span class="att-breakdown-amount">{{ item.amount_display|default:'-' }}</span>
+                  {% else %}
+                    <span class="att-cell-empty">-</span>
+                  {% endif %}
+                </td>
+              {% endfor %}
+              <td class="text-end fw-bold">
+                {{ row.totals.total_display|default:'0:00' }}
+                <span class="att-breakdown-amount">{{ row.totals.total_amount_display }}</span>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+          <tfoot class="table-light">
+          <tr>
+            <th scope="row">合計</th>
+            {% for item in breakdown.footer %}
+              <td class="text-end fw-bold">
+                {{ item.time_display }}
+                <span class="att-breakdown-amount">{{ item.amount_display|default:'-' }}</span>
+              </td>
+            {% endfor %}
+            <td class="text-end fw-bold">
+              {{ month_total_display|default:'0:00' }}
+              <span class="att-breakdown-amount">{{ month_total_amount_display }}</span>
+            </td>
+          </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="form-text">金額は勤怠ごとに「実働時間 × 登録時点の時給」を計算し（1円未満は四捨五入）、合計したものです。</p>
+    </section>
+  {% endif %}
+
   {# ===== 管理者による勤怠修正ダイアログ ===== #}
   <div class="modal fade" id="attendanceEditModal" tabindex="-1" aria-labelledby="attendanceEditModalLabel"
        aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
-        <form method="post">
+        <form method="post" id="attendanceEditForm">
           {% csrf_token %}
           <input type="hidden" name="month" value="{{ current_month_value }}">
           <input type="hidden" name="user_id" id="attendanceEditUserId" value="">
           <input type="hidden" name="work_date" id="attendanceEditWorkDate" value="">
+          <input type="hidden" name="record_id" id="attendanceEditRecordId" value="">
+          <input type="hidden" name="action" id="attendanceEditAction" value="save">
           <div class="modal-header">
             <h5 class="modal-title" id="attendanceEditModalLabel">勤怠の修正</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
           </div>
           <div class="modal-body">
-            <div class="row g-3">
-              <div class="col-6">
-                <label class="form-label small fw-bold" for="attendanceEditStart">出勤時刻</label>
-                <input type="time" class="form-control" id="attendanceEditStart" name="start_time">
-              </div>
-              <div class="col-6">
-                <label class="form-label small fw-bold" for="attendanceEditEnd">退勤時刻</label>
-                <input type="time" class="form-control" id="attendanceEditEnd" name="end_time">
-                <div class="form-text">出勤より前の時刻は翌日の退勤として扱います。</div>
-              </div>
-              <div class="col-6">
-                <label class="form-label small fw-bold" for="attendanceEditBreak">休憩（分）</label>
-                <input type="number" class="form-control" id="attendanceEditBreak" name="break_minutes"
-                       min="0" step="5" placeholder="0">
-              </div>
-              <div class="col-12">
-                <label class="form-label small fw-bold" for="attendanceEditNote">メモ（任意）</label>
-                <input type="text" class="form-control" id="attendanceEditNote" name="note" maxlength="200">
-              </div>
+            <div id="attendanceEditRecords" class="mb-3 pb-3 border-bottom d-none">
+              <div class="small fw-bold mb-1">この日の勤怠（タップで修正）</div>
+              <div class="list-group mb-2" id="attendanceEditRecordList"></div>
+              <button type="button" class="btn btn-outline-primary btn-sm" id="attendanceEditAddButton">
+                <i class="bi bi-plus-lg me-1"></i>この日に勤怠を追加
+              </button>
             </div>
-            <p class="form-text mb-0 mt-3">出勤・退勤の両方を空にして登録すると、その日の勤怠を削除します。</p>
+            <h6 class="fw-bold text-primary mb-3" id="attendanceEditMode"></h6>
+            {% include 'shift/_attendance_record_fields.html' with prefix='attendanceEdit' %}
           </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
-            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>保存</button>
+          <div class="modal-footer justify-content-between">
+            <button type="button" class="btn btn-outline-danger d-none" id="attendanceEditDelete">
+              <i class="bi bi-trash me-1"></i>削除
+            </button>
+            <div class="d-flex gap-2 ms-auto">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg me-1"></i><span id="attendanceEditSubmitLabel">保存する</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>
     </div>
   </div>
+  {{ records_payload|json_script:"attendanceRecords" }}
 {% endblock content %}
 
 {% block javascript %}
   <script>
     document.addEventListener("DOMContentLoaded", function () {
+      const recordsByCell = JSON.parse(document.getElementById("attendanceRecords").textContent);
       const modalEl = document.getElementById("attendanceEditModal");
       const modal = new bootstrap.Modal(modalEl);
+      const form = document.getElementById("attendanceEditForm");
       const userIdInput = document.getElementById("attendanceEditUserId");
       const workDateInput = document.getElementById("attendanceEditWorkDate");
+      const recordIdInput = document.getElementById("attendanceEditRecordId");
+      const actionInput = document.getElementById("attendanceEditAction");
+      const workTypeSelect = document.getElementById("attendanceEditWorkType");
       const startInput = document.getElementById("attendanceEditStart");
       const endInput = document.getElementById("attendanceEditEnd");
       const breakInput = document.getElementById("attendanceEditBreak");
       const noteInput = document.getElementById("attendanceEditNote");
       const modalLabel = document.getElementById("attendanceEditModalLabel");
+      const modeLabel = document.getElementById("attendanceEditMode");
+      const recordsBox = document.getElementById("attendanceEditRecords");
+      const recordList = document.getElementById("attendanceEditRecordList");
+      const addButton = document.getElementById("attendanceEditAddButton");
+      const deleteButton = document.getElementById("attendanceEditDelete");
+      const submitLabel = document.getElementById("attendanceEditSubmitLabel");
+      let dayRecords = [];
+
+      // 無効にした仕事内容は、その仕事内容の勤怠を編集するときだけ選択肢に出す
+      const selectWorkType = function (value) {
+        if (!workTypeSelect) {
+          return;
+        }
+        Array.from(workTypeSelect.options).forEach(function (option) {
+          if (option.dataset.inactive) {
+            option.hidden = option.value !== value;
+          }
+        });
+        workTypeSelect.value = value;
+      };
+
+      const recordSummary = function (record) {
+        const parts = [];
+        if (record.work_type_name) {
+          parts.push(record.work_type_name);
+        }
+        parts.push((record.start || "--:--") + "〜" + (record.end || "--:--") + (record.overnight ? "(翌)" : ""));
+        if (record.worked) {
+          parts.push("実働 " + record.worked);
+        }
+        if (record.amount) {
+          parts.push(record.amount);
+        }
+        return parts.join(" ／ ");
+      };
+
+      // 追加するときの出勤時刻は、その日の最後の勤怠の退勤時刻から始める
+      const lastEnd = function () {
+        for (let i = dayRecords.length - 1; i >= 0; i -= 1) {
+          if (dayRecords[i].end) {
+            return dayRecords[i].end;
+          }
+        }
+        return "";
+      };
+
+      const edit = function (record) {
+        recordIdInput.value = record ? record.id : "";
+        actionInput.value = "save";
+        selectWorkType(record ? String(record.work_type) : "");
+        startInput.value = record ? record.start : lastEnd();
+        endInput.value = record ? record.end : "";
+        breakInput.value = record ? record.break_minutes : "";
+        noteInput.value = record ? record.note : "";
+        const icon = document.createElement("i");
+        icon.className = record ? "bi bi-pencil me-1" : "bi bi-plus-lg me-1";
+        modeLabel.replaceChildren(icon, record ? "選択した勤怠を修正" : "新しい勤怠を追加");
+        submitLabel.textContent = record ? "保存する" : "追加する";
+        deleteButton.classList.toggle("d-none", !record);
+        // 追加の入力中は「この日に勤怠を追加」ボタンは不要なので隠す
+        addButton.classList.toggle("d-none", !record);
+        recordList.querySelectorAll(".list-group-item").forEach(function (item) {
+          item.classList.toggle("active", Boolean(record) && item.dataset.recordId === String(record.id));
+        });
+      };
 
       document.querySelectorAll("td.att-cell").forEach(function (cell) {
         cell.addEventListener("click", function () {
           userIdInput.value = cell.dataset.userId;
           workDateInput.value = cell.dataset.date;
           modalLabel.textContent = cell.dataset.member + " / " + cell.dataset.label;
-          startInput.value = cell.dataset.start || "";
-          endInput.value = cell.dataset.end || "";
-          breakInput.value = cell.dataset.breakMinutes || "";
-          noteInput.value = cell.dataset.note || "";
+          dayRecords = recordsByCell[cell.dataset.userId + ":" + cell.dataset.date] || [];
+
+          recordList.replaceChildren();
+          dayRecords.forEach(function (record) {
+            const item = document.createElement("button");
+            item.type = "button";
+            item.className = "list-group-item list-group-item-action small d-flex justify-content-between gap-2";
+            item.dataset.recordId = String(record.id);
+            const text = document.createElement("span");
+            text.textContent = recordSummary(record);
+            const pencil = document.createElement("i");
+            pencil.className = "bi bi-pencil";
+            item.replaceChildren(text, pencil);
+            item.addEventListener("click", function () {
+              edit(record);
+            });
+            recordList.appendChild(item);
+          });
+          recordsBox.classList.toggle("d-none", dayRecords.length === 0);
+          // 1件だけならそのまま修正、複数あるときは一覧から選んでもらう
+          edit(dayRecords.length === 1 ? dayRecords[0] : null);
           modal.show();
         });
+      });
+
+      addButton.addEventListener("click", function () {
+        edit(null);
+      });
+
+      deleteButton.addEventListener("click", function () {
+        if (!confirm("この勤怠を削除しますか？")) {
+          return;
+        }
+        actionInput.value = "delete";
+        form.submit();
       });
     });
   </script>

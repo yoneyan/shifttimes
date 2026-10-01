@@ -1,4 +1,28 @@
 {% extends 'base.html' %}
+{% block extrahead %}
+  <style>
+    .work-type-table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .work-type-table th,
+    .work-type-table td {
+      border: 1px solid #adb5bd;
+      padding: .45rem .5rem;
+    }
+
+    .work-type-table thead th {
+      background: #f1f3f5;
+      font-size: .8rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .work-type-table tbody tr.work-type-row { cursor: pointer; }
+    .work-type-table tbody tr.work-type-row:hover td { filter: brightness(.96); }
+  </style>
+{% endblock extrahead %}
 {% block title %}勤怠設定 | {% endblock %}
 {% block page_title %}勤怠設定{% endblock %}
 {% block page_subtitle %}
@@ -63,6 +87,64 @@
     </div>
   </form>
 
+  <section class="mb-4">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+      <h2 class="h5 mb-0">仕事内容と時給</h2>
+      <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal"
+              data-bs-target="#workTypeModal" data-mode="add">
+        <i class="bi bi-plus-lg me-1"></i>追加
+      </button>
+    </div>
+    <p class="text-muted small mb-2">
+      メンバーが勤怠を登録するときに選ぶ項目です。実働時間 × 時給で金額を計算します。
+      仕事内容を1つでも用意すると、勤怠の登録時に選択が必須になります。
+      時給を変更しても登録済みの勤怠の金額は変わりません（反映開始日を指定した場合を除く）。
+    </p>
+
+    <div class="table-responsive">
+      <table class="work-type-table">
+        <thead>
+        <tr>
+          <th scope="col">仕事内容</th>
+          <th scope="col" class="text-end">時給</th>
+          <th scope="col">状態</th>
+          <th scope="col">登録済みの勤怠</th>
+          <th scope="col">表示順</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for row in work_type_rows %}
+          <tr class="work-type-row"
+              data-id="{{ row.work_type.id }}"
+              data-name="{{ row.work_type.name }}"
+              data-rate="{{ row.work_type.hourly_rate }}"
+              data-active="{% if row.work_type.is_active %}1{% endif %}"
+              data-order="{{ row.work_type.display_order }}"
+              data-delete-url="{{ row.delete_url }}">
+            <td>{{ row.work_type.name }}</td>
+            <td class="text-end">{{ row.work_type.hourly_rate_display }}</td>
+            <td>
+              {% if row.work_type.is_active %}
+                <span class="badge text-bg-primary">有効</span>
+              {% else %}
+                <span class="badge text-bg-secondary">無効</span>
+              {% endif %}
+            </td>
+            <td>{{ row.record_count }}件</td>
+            <td>{{ row.work_type.display_order }}</td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="5" class="text-muted py-4">
+              仕事内容が登録されていません。登録しない場合、勤怠は時間だけを記録し、金額は計算しません。
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
   <div class="card">
     <div class="card-body">
       <h2 class="h6 mb-2">現在の状態</h2>
@@ -94,4 +176,108 @@
       </ul>
     </div>
   </div>
+
+  {# ===== 仕事内容ダイアログ ===== #}
+  <div class="modal fade" id="workTypeModal" tabindex="-1" aria-labelledby="workTypeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="work_type">
+          <input type="hidden" name="work_type_id" id="workTypeId" value="">
+          <div class="modal-header">
+            <h5 class="modal-title" id="workTypeModalLabel">仕事内容</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label small fw-bold" for="workTypeName">仕事内容</label>
+              <input type="text" class="form-control" id="workTypeName" name="name" maxlength="100"
+                     placeholder="例: 授業、事務" required>
+            </div>
+            <div class="row g-2 mb-3">
+              <div class="col-7">
+                <label class="form-label small fw-bold" for="workTypeRate">時給（円）</label>
+                <div class="input-group">
+                  <input type="number" class="form-control" id="workTypeRate" name="hourly_rate" min="0" step="1"
+                         required>
+                  <span class="input-group-text">円/時</span>
+                </div>
+              </div>
+              <div class="col-5">
+                <label class="form-label small fw-bold" for="workTypeOrder">表示順</label>
+                <input type="number" class="form-control" id="workTypeOrder" name="display_order" min="0" value="100">
+              </div>
+            </div>
+            <div class="mb-3" id="workTypeApplyFromGroup">
+              <label class="form-label small fw-bold" for="workTypeApplyFrom">登録済みの勤怠への反映（任意）</label>
+              <input type="date" class="form-control" id="workTypeApplyFrom" name="apply_from">
+              <div class="form-text">
+                日付を指定すると、その日以降に登録済みの勤怠にも新しい時給を反映します。
+                空欄なら、これから登録する勤怠にだけ反映します。
+              </div>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="workTypeActive" name="is_active" checked>
+              <label class="form-check-label" for="workTypeActive">有効にする（勤怠の登録で選べるようにする）</label>
+            </div>
+            <div class="form-text">
+              勤怠が登録されている仕事内容は削除できません。無効にすると新しい登録では選べなくなります。
+            </div>
+          </div>
+          <div class="modal-footer justify-content-between">
+            <button type="submit" class="btn btn-outline-danger d-none" id="workTypeDelete" formnovalidate
+                    onclick="return confirm('この仕事内容を削除しますか？');">
+              <i class="bi bi-trash me-1"></i>削除
+            </button>
+            <div class="d-flex gap-2 ms-auto">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg me-1"></i>登録
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 {% endblock content %}
+
+{% block javascript %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const modalEl = document.getElementById("workTypeModal");
+      const modal = new bootstrap.Modal(modalEl);
+      const deleteButton = document.getElementById("workTypeDelete");
+      const fill = function (data) {
+        document.getElementById("workTypeId").value = data.id || "";
+        document.getElementById("workTypeName").value = data.name || "";
+        document.getElementById("workTypeRate").value = data.rate || "";
+        document.getElementById("workTypeOrder").value = data.order || 100;
+        document.getElementById("workTypeActive").checked = data.id ? Boolean(data.active) : true;
+        document.getElementById("workTypeApplyFrom").value = "";
+        // 反映先の勤怠があるのは登録済みの仕事内容だけ
+        document.getElementById("workTypeApplyFromGroup").classList.toggle("d-none", !data.id);
+        document.getElementById("workTypeModalLabel").textContent = data.id ? "仕事内容の編集" : "仕事内容の追加";
+        if (data.deleteUrl) {
+          deleteButton.setAttribute("formaction", data.deleteUrl);
+          deleteButton.classList.remove("d-none");
+        } else {
+          deleteButton.removeAttribute("formaction");
+          deleteButton.classList.add("d-none");
+        }
+      };
+      document.querySelectorAll("tr.work-type-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+          fill(row.dataset);
+          modal.show();
+        });
+      });
+      modalEl.addEventListener("show.bs.modal", function (event) {
+        if (event.relatedTarget && event.relatedTarget.dataset.mode === "add") {
+          fill({});
+        }
+      });
+    });
+  </script>
+{% endblock javascript %}

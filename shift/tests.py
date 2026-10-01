@@ -1,3 +1,4 @@
+import csv
 from datetime import date, time, timedelta
 from io import StringIO
 from unittest import mock
@@ -19,6 +20,8 @@ from shift.models import (
     ShiftEntry,
     SlackNotificationSetting,
     TimeSlot,
+    WorkType,
+    find_overlapping_record,
 )
 
 
@@ -1043,7 +1046,7 @@ class AttendanceTests(TestCase):
         self.assertEqual(record.worked_time_display, "8:30")
 
     def test_manual_input_deletes_record_when_times_are_cleared(self):
-        AttendanceRecord.objects.create(
+        record = AttendanceRecord.objects.create(
             group=self.group, user=self.user, work_date=self.today,
             start_time=time(9, 0), end_time=time(18, 0),
         )
@@ -1054,6 +1057,7 @@ class AttendanceTests(TestCase):
             {
                 "month": self.month_value,
                 "work_date": self.today.isoformat(),
+                "record_id": str(record.id),
                 "start_time": "",
                 "end_time": "",
                 "break_minutes": "",
@@ -1181,6 +1185,670 @@ class AttendanceTests(TestCase):
         self.assertTrue(night_shift.is_overnight)
         self.assertIsNone(working.worked_minutes)
         self.assertTrue(working.is_working)
+
+
+class AttendanceMultipleRecordTests(TestCase):
+    """同じ日に複数の勤怠を登録する（手動入力・打刻・管理者の修正）"""
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create(
+            username="user", username_jp="ユーザー", email="user@example.com", is_active=True,
+        )
+        self.other_user = user_model.objects.create(
+            username="other", username_jp="他メンバー", email="other@example.com", is_active=True,
+        )
+        self.admin_user = user_model.objects.create(
+            username="admin", username_jp="管理者", email="admin@example.com", is_active=True,
+        )
+        self.group = Group.objects.create(name="shop", name_jp="店舗")
+        UserGroup.objects.create(user=self.user, group=self.group)
+        UserGroup.objects.create(user=self.other_user, group=self.group)
+        UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
+        self.setting = AttendanceSetting.objects.create(group=self.group, is_enabled=True)
+        self.today = timezone.now().date()
+        self.month_value = self.today.strftime("%Y-%m")
+        self.url = reverse("shift:attendance", args=[self.group.id])
+        self.clock_url = reverse("shift:attendance_clock", args=[self.group.id])
+
+    def _post_record(self, **values):
+        data = {
+            "month": self.month_value,
+            "work_date": self.today.isoformat(),
+            "start_time": "",
+            "end_time": "",
+            "break_minutes": "",
+            "note": "",
+        }
+        data.update(values)
+        return self.client.post(self.url, data)
+
+    def _create(self, start, end=None, user=None, **kwargs):
+        return AttendanceRecord.objects.create(
+            group=self.group, user=user or self.user, work_date=self.today,
+            start_time=start, end_time=end, **kwargs,
+        )
+
+    def _now(self, hour, minute=0):
+        return timezone.datetime.combine(self.today, time(hour, minute))
+
+    # ----- 手動入力 -----
+
+    def test_manual_input_adds_second_record_on_the_same_day(self):
+        self._create(time(9, 0), time(12, 0))
+        self.client.force_login(self.user)
+
+        self._post_record(start_time="13:00", end_time="17:00")
+
+        records = AttendanceRecord.objects.filter(group=self.group, user=self.user, work_date=self.today)
+        self.assertEqual(
+            [(r.start_time, r.end_time) for r in records],
+            [(time(9, 0), time(12, 0)), (time(13, 0), time(17, 0))],
+        )
+
+    def test_manual_input_rejects_overlapping_record(self):
+        self._create(time(9, 0), time(12, 0))
+        self.client.force_login(self.user)
+
+        response = self._post_record(start_time="11:00", end_time="13:00")
+
+        self.assertEqual(AttendanceRecord.objects.filter(user=self.user).count(), 1)
+        messages = [str(message) for message in response.wsgi_request._messages]
+        self.assertTrue(any("時間が重なっています" in message for message in messages))
+
+    def test_double_submission_does_not_create_duplicates(self):
+        self.client.force_login(self.user)
+
+        self._post_record(start_time="09:00", end_time="12:00")
+        self._post_record(start_time="09:00", end_time="12:00")
+
+        self.assertEqual(AttendanceRecord.objects.filter(user=self.user).count(), 1)
+
+    def test_manual_input_edits_only_the_selected_record(self):
+        morning = self._create(time(9, 0), time(12, 0))
+        afternoon = self._create(time(13, 0), time(17, 0))
+        self.client.force_login(self.user)
+
+        self._post_record(record_id=str(afternoon.id), start_time="13:30", end_time="17:00")
+
+        morning.refresh_from_db()
+        afternoon.refresh_from_db()
+        self.assertEqual(morning.start_time, time(9, 0))
+        self.assertEqual(afternoon.start_time, time(13, 30))
+
+    def test_editing_a_record_ignores_itself_in_the_overlap_check(self):
+        record = self._create(time(9, 0), time(12, 0))
+        self.client.force_login(self.user)
+
+        self._post_record(record_id=str(record.id), start_time="09:00", end_time="12:30")
+
+        record.refresh_from_db()
+        self.assertEqual(record.end_time, time(12, 30))
+
+    def test_delete_action_removes_only_the_selected_record(self):
+        morning = self._create(time(9, 0), time(12, 0))
+        afternoon = self._create(time(13, 0), time(17, 0))
+        self.client.force_login(self.user)
+
+        self._post_record(record_id=str(morning.id), action="delete")
+
+        self.assertFalse(AttendanceRecord.objects.filter(id=morning.id).exists())
+        self.assertTrue(AttendanceRecord.objects.filter(id=afternoon.id).exists())
+
+    def test_member_cannot_edit_or_delete_another_members_record(self):
+        record = self._create(time(9, 0), time(12, 0), user=self.other_user)
+        self.client.force_login(self.user)
+
+        self._post_record(record_id=str(record.id), start_time="10:00", end_time="12:00")
+        self._post_record(record_id=str(record.id), action="delete")
+
+        record.refresh_from_db()
+        self.assertEqual(record.start_time, time(9, 0))
+        self.assertFalse(AttendanceRecord.objects.filter(user=self.user).exists())
+
+    def test_invalid_date_is_rejected_without_error(self):
+        self.client.force_login(self.user)
+
+        response = self._post_record(work_date="2026-02-30", start_time="09:00", end_time="12:00")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(AttendanceRecord.objects.filter(user=self.user).exists())
+
+    def test_attendance_page_lists_every_record_of_the_day(self):
+        self._create(time(9, 0), time(12, 0))
+        self._create(time(13, 0), time(17, 0), break_minutes=30)
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, 'data-record-id="', count=2)
+        self.assertContains(response, "勤務日数 1 日")
+        self.assertContains(response, "実働合計 6:30")
+
+    def test_attendance_page_shows_add_entry_points_only_while_manual_input_is_allowed(self):
+        self._create(time(9, 0), time(12, 0))
+        self.client.force_login(self.user)
+
+        allowed = self.client.get(self.url)
+        self.setting.allow_manual_input = False
+        self.setting.save()
+        disallowed = self.client.get(self.url)
+
+        self.assertContains(allowed, 'class="attendance-add-row', count=1)
+        self.assertContains(allowed, 'id="attendanceRecordsByDate"')
+        self.assertEqual(
+            [record["start"] for record in allowed.context["records_payload"][self.today.isoformat()]],
+            ["09:00"],
+        )
+        self.assertNotContains(disallowed, 'class="attendance-add-row')
+        self.assertNotContains(disallowed, 'data-attendance-action="add"')
+
+    # ----- 打刻 -----
+
+    def test_clock_in_again_after_clock_out_creates_another_record(self):
+        self.client.force_login(self.user)
+
+        with mock.patch("django.utils.timezone.now", return_value=self._now(9)):
+            self.client.post(self.clock_url, {"action": "in"})
+        with mock.patch("django.utils.timezone.now", return_value=self._now(12)):
+            self.client.post(self.clock_url, {"action": "out"})
+        with mock.patch("django.utils.timezone.now", return_value=self._now(13)):
+            self.client.post(self.clock_url, {"action": "in"})
+        with mock.patch("django.utils.timezone.now", return_value=self._now(17)):
+            self.client.post(self.clock_url, {"action": "out"})
+
+        records = AttendanceRecord.objects.filter(user=self.user, work_date=self.today)
+        self.assertEqual(
+            [(r.start_time, r.end_time) for r in records],
+            [(time(9, 0), time(12, 0)), (time(13, 0), time(17, 0))],
+        )
+
+    def test_clock_in_while_working_keeps_the_first_time(self):
+        self.client.force_login(self.user)
+
+        with mock.patch("django.utils.timezone.now", return_value=self._now(9)):
+            self.client.post(self.clock_url, {"action": "in"})
+        with mock.patch("django.utils.timezone.now", return_value=self._now(10)):
+            self.client.post(self.clock_url, {"action": "in"})
+
+        record = AttendanceRecord.objects.get(user=self.user, work_date=self.today)
+        self.assertEqual(record.start_time, time(9, 0))
+
+    def test_clock_in_inside_a_registered_record_is_rejected(self):
+        self._create(time(9, 0), time(12, 0))
+        self.client.force_login(self.user)
+
+        with mock.patch("django.utils.timezone.now", return_value=self._now(10)):
+            self.client.post(self.clock_url, {"action": "in"})
+
+        self.assertEqual(AttendanceRecord.objects.filter(user=self.user).count(), 1)
+
+    # ----- 管理者の修正 -----
+
+    def test_admin_can_add_and_edit_records_of_a_member(self):
+        record = self._create(time(9, 0), time(12, 0))
+        summary_url = reverse("shift:attendance_summary", args=[self.group.id])
+        self.client.force_login(self.admin_user)
+        base = {
+            "month": self.month_value, "user_id": str(self.user.id), "work_date": self.today.isoformat(),
+            "break_minutes": "", "note": "",
+        }
+
+        self.client.post(summary_url, {**base, "start_time": "13:00", "end_time": "15:00"})
+        self.client.post(summary_url, {**base, "record_id": str(record.id), "start_time": "08:30", "end_time": "12:00"})
+
+        records = AttendanceRecord.objects.filter(user=self.user, work_date=self.today)
+        self.assertEqual(
+            [(r.start_time, r.end_time) for r in records],
+            [(time(8, 30), time(12, 0)), (time(13, 0), time(15, 0))],
+        )
+
+    def test_admin_cannot_edit_record_through_another_member(self):
+        record = self._create(time(9, 0), time(12, 0), user=self.other_user)
+        self.client.force_login(self.admin_user)
+
+        self.client.post(
+            reverse("shift:attendance_summary", args=[self.group.id]),
+            {
+                "month": self.month_value, "user_id": str(self.user.id), "record_id": str(record.id),
+                "work_date": self.today.isoformat(), "start_time": "10:00", "end_time": "12:00",
+                "break_minutes": "", "note": "",
+            },
+        )
+
+        record.refresh_from_db()
+        self.assertEqual(record.start_time, time(9, 0))
+        self.assertEqual(record.user, self.other_user)
+
+    def test_summary_sums_records_of_the_same_day(self):
+        self._create(time(9, 0), time(12, 0))
+        self._create(time(13, 0), time(17, 0))
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(reverse("shift:attendance_summary", args=[self.group.id]))
+
+        self.assertContains(response, "7:00<sup")
+        self.assertContains(response, "×2")
+
+    # ----- 時間帯の重なり -----
+
+    def test_find_overlapping_record(self):
+        morning = AttendanceRecord(start_time=time(9, 0), end_time=time(12, 0))
+        night = AttendanceRecord(start_time=time(22, 0), end_time=time(2, 0))
+        working = AttendanceRecord(start_time=time(14, 0))
+        records = [morning, night, working]
+
+        self.assertIs(find_overlapping_record(records, time(11, 0), time(13, 0)), morning)
+        self.assertIsNone(find_overlapping_record(records, time(12, 0), time(13, 0)))  # 境目は重ならない
+        self.assertIs(find_overlapping_record(records, time(23, 0), None), night)
+        self.assertIs(find_overlapping_record(records, time(13, 0), time(15, 0)), working)
+        self.assertIsNone(find_overlapping_record(records, time(15, 0), time(16, 0)))
+        self.assertIsNone(find_overlapping_record(records, None, None))
+
+
+class WorkTypeTests(TestCase):
+    """勤怠の仕事内容と時給・金額の計算"""
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create(
+            username="user", username_jp="ユーザー", email="user@example.com", is_active=True,
+        )
+        self.admin_user = user_model.objects.create(
+            username="admin", username_jp="管理者", email="admin@example.com", is_active=True,
+        )
+        self.group = Group.objects.create(name="shop", name_jp="店舗")
+        self.other_group = Group.objects.create(name="other-shop", name_jp="別店舗")
+        UserGroup.objects.create(user=self.user, group=self.group)
+        UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
+        AttendanceSetting.objects.create(group=self.group, is_enabled=True)
+        self.lesson = WorkType.objects.create(group=self.group, name="授業", hourly_rate=1500, display_order=1)
+        self.office = WorkType.objects.create(group=self.group, name="事務", hourly_rate=1100, display_order=2)
+        self.today = timezone.now().date()
+        self.month_value = self.today.strftime("%Y-%m")
+        self.url = reverse("shift:attendance", args=[self.group.id])
+        self.settings_url = reverse("shift:attendance_settings", args=[self.group.id])
+
+    def _post_record(self, **values):
+        data = {
+            "month": self.month_value,
+            "work_date": self.today.isoformat(),
+            "start_time": "",
+            "end_time": "",
+            "break_minutes": "",
+            "note": "",
+        }
+        data.update(values)
+        return self.client.post(self.url, data)
+
+    def _post_work_type(self, **values):
+        data = {"action": "work_type", "name": "", "hourly_rate": "", "display_order": "100", "is_active": "on"}
+        data.update(values)
+        return self.client.post(self.settings_url, data)
+
+    # ----- 金額の計算 -----
+
+    def test_amount_is_worked_minutes_times_hourly_rate(self):
+        record = AttendanceRecord(start_time=time(9, 0), end_time=time(10, 30), hourly_rate=1000)
+        short = AttendanceRecord(start_time=time(9, 0), end_time=time(9, 1), hourly_rate=1000)
+        no_rate = AttendanceRecord(start_time=time(9, 0), end_time=time(10, 0))
+        working = AttendanceRecord(start_time=time(9, 0), hourly_rate=1000)
+
+        self.assertEqual(record.amount, 1500)
+        self.assertEqual(record.amount_display, "1,500円")
+        self.assertEqual(short.amount, 17)  # 16.66… 円は四捨五入
+        self.assertIsNone(no_rate.amount)
+        self.assertIsNone(working.amount)
+
+    # ----- 勤怠の登録 -----
+
+    def test_manual_input_saves_work_type_and_its_rate(self):
+        self.client.force_login(self.user)
+
+        self._post_record(work_type=str(self.lesson.id), start_time="09:00", end_time="11:00")
+
+        record = AttendanceRecord.objects.get(user=self.user)
+        self.assertEqual(record.work_type, self.lesson)
+        self.assertEqual(record.hourly_rate, 1500)
+        self.assertEqual(record.amount, 3000)
+
+    def test_work_type_is_required_when_the_group_has_work_types(self):
+        self.client.force_login(self.user)
+
+        response = self._post_record(start_time="09:00", end_time="11:00")
+
+        self.assertFalse(AttendanceRecord.objects.filter(user=self.user).exists())
+        messages = [str(message) for message in response.wsgi_request._messages]
+        self.assertTrue(any("仕事内容を選択してください" in message for message in messages))
+
+    def test_work_type_of_another_group_is_rejected(self):
+        foreign = WorkType.objects.create(group=self.other_group, name="授業", hourly_rate=9999)
+        self.client.force_login(self.user)
+
+        self._post_record(work_type=str(foreign.id), start_time="09:00", end_time="11:00")
+
+        self.assertFalse(AttendanceRecord.objects.filter(user=self.user).exists())
+
+    def test_inactive_work_type_cannot_be_chosen_but_existing_record_can_be_edited(self):
+        record = AttendanceRecord.objects.create(
+            group=self.group, user=self.user, work_date=self.today,
+            start_time=time(9, 0), end_time=time(10, 0), work_type=self.office, hourly_rate=1100,
+        )
+        self.office.is_active = False
+        self.office.save()
+        self.client.force_login(self.user)
+
+        self._post_record(work_type=str(self.office.id), start_time="13:00", end_time="14:00")
+        self._post_record(record_id=str(record.id), work_type=str(self.office.id),
+                          start_time="09:00", end_time="10:30")
+
+        self.assertEqual(AttendanceRecord.objects.filter(user=self.user).count(), 1)
+        record.refresh_from_db()
+        self.assertEqual(record.end_time, time(10, 30))
+        self.assertEqual(record.work_type, self.office)
+
+    def test_clock_in_saves_selected_work_type(self):
+        self.client.force_login(self.user)
+
+        self.client.post(
+            reverse("shift:attendance_clock", args=[self.group.id]),
+            {"action": "in", "work_type": str(self.office.id)},
+        )
+
+        record = AttendanceRecord.objects.get(user=self.user)
+        self.assertEqual(record.work_type, self.office)
+        self.assertEqual(record.hourly_rate, 1100)
+
+    def test_clock_in_without_work_type_is_rejected(self):
+        self.client.force_login(self.user)
+
+        self.client.post(reverse("shift:attendance_clock", args=[self.group.id]), {"action": "in"})
+
+        self.assertFalse(AttendanceRecord.objects.filter(user=self.user).exists())
+
+    # ----- 時給の変更 -----
+
+    def test_rate_change_does_not_affect_registered_records(self):
+        record = AttendanceRecord.objects.create(
+            group=self.group, user=self.user, work_date=self.today,
+            start_time=time(9, 0), end_time=time(10, 0), work_type=self.lesson, hourly_rate=1500,
+        )
+        self.client.force_login(self.admin_user)
+
+        self._post_work_type(work_type_id=str(self.lesson.id), name="授業", hourly_rate="1600")
+
+        self.lesson.refresh_from_db()
+        record.refresh_from_db()
+        self.assertEqual(self.lesson.hourly_rate, 1600)
+        self.assertEqual(record.hourly_rate, 1500)
+
+    def test_rate_change_can_be_applied_from_a_date(self):
+        old = AttendanceRecord.objects.create(
+            group=self.group, user=self.user, work_date=self.today - timedelta(days=40),
+            start_time=time(9, 0), end_time=time(10, 0), work_type=self.lesson, hourly_rate=1500,
+        )
+        new = AttendanceRecord.objects.create(
+            group=self.group, user=self.user, work_date=self.today,
+            start_time=time(9, 0), end_time=time(10, 0), work_type=self.lesson, hourly_rate=1500,
+        )
+        other_type = AttendanceRecord.objects.create(
+            group=self.group, user=self.user, work_date=self.today,
+            start_time=time(13, 0), end_time=time(14, 0), work_type=self.office, hourly_rate=1100,
+        )
+        self.client.force_login(self.admin_user)
+
+        self._post_work_type(
+            work_type_id=str(self.lesson.id), name="授業", hourly_rate="1600",
+            apply_from=(self.today - timedelta(days=7)).isoformat(),
+        )
+
+        old.refresh_from_db()
+        new.refresh_from_db()
+        other_type.refresh_from_db()
+        self.assertEqual(old.hourly_rate, 1500)
+        self.assertEqual(new.hourly_rate, 1600)
+        self.assertEqual(other_type.hourly_rate, 1100)
+
+    def test_editing_a_record_keeps_its_rate_unless_the_work_type_changes(self):
+        record = AttendanceRecord.objects.create(
+            group=self.group, user=self.user, work_date=self.today,
+            start_time=time(9, 0), end_time=time(10, 0), work_type=self.lesson, hourly_rate=1400,
+        )
+        self.client.force_login(self.user)
+
+        self._post_record(record_id=str(record.id), work_type=str(self.lesson.id),
+                          start_time="09:00", end_time="10:00", note="メモだけ変更")
+        record.refresh_from_db()
+        self.assertEqual(record.hourly_rate, 1400)
+
+        self._post_record(record_id=str(record.id), work_type=str(self.office.id),
+                          start_time="09:00", end_time="10:00")
+        record.refresh_from_db()
+        self.assertEqual(record.hourly_rate, 1100)
+
+    # ----- 表示 -----
+
+    def test_attendance_page_shows_amounts_by_work_type(self):
+        AttendanceRecord.objects.create(
+            group=self.group, user=self.user, work_date=self.today,
+            start_time=time(9, 0), end_time=time(11, 0), work_type=self.lesson, hourly_rate=1500,
+        )
+        AttendanceRecord.objects.create(
+            group=self.group, user=self.user, work_date=self.today,
+            start_time=time(13, 0), end_time=time(14, 30), work_type=self.office, hourly_rate=1100,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, "金額合計 4,650円")
+        self.assertContains(response, "3,000円")
+        self.assertContains(response, "1,650円")
+
+    def test_page_without_work_types_hides_amounts(self):
+        WorkType.objects.all().delete()
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url)
+
+        self.assertNotContains(response, "金額合計")
+
+    def test_summary_shows_totals_and_breakdown(self):
+        AttendanceRecord.objects.create(
+            group=self.group, user=self.user, work_date=self.today,
+            start_time=time(9, 0), end_time=time(11, 0), work_type=self.lesson, hourly_rate=1500,
+        )
+        AttendanceRecord.objects.create(
+            group=self.group, user=self.admin_user, work_date=self.today,
+            start_time=time(13, 0), end_time=time(14, 0), work_type=self.office, hourly_rate=1100,
+        )
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(reverse("shift:attendance_summary", args=[self.group.id]))
+
+        self.assertContains(response, "金額合計 4,100円")
+        self.assertContains(response, "仕事内容別の集計")
+        breakdown = response.context["breakdown"]
+        self.assertEqual(breakdown["columns"], [self.lesson, self.office])
+        self.assertEqual([item["amount_display"] for item in breakdown["footer"]], ["3,000円", "1,100円"])
+
+    # ----- 仕事内容の管理 -----
+
+    def test_member_cannot_manage_work_types(self):
+        self.client.force_login(self.user)
+
+        response = self._post_work_type(name="清掃", hourly_rate="1000")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(WorkType.objects.filter(name="清掃").exists())
+
+    def test_admin_can_add_work_type(self):
+        self.client.force_login(self.admin_user)
+
+        response = self._post_work_type(name="清掃", hourly_rate="1050")
+
+        self.assertRedirects(response, self.settings_url)
+        work_type = WorkType.objects.get(group=self.group, name="清掃")
+        self.assertEqual(work_type.hourly_rate, 1050)
+        self.assertTrue(work_type.is_active)
+
+    def test_duplicate_work_type_name_is_rejected(self):
+        self.client.force_login(self.admin_user)
+
+        self._post_work_type(name="授業", hourly_rate="2000")
+
+        self.assertEqual(WorkType.objects.filter(group=self.group, name="授業").count(), 1)
+
+    def test_work_type_of_another_group_is_not_editable(self):
+        foreign = WorkType.objects.create(group=self.other_group, name="外部", hourly_rate=1000)
+        self.client.force_login(self.admin_user)
+
+        self._post_work_type(work_type_id=str(foreign.id), name="乗っ取り", hourly_rate="1")
+
+        foreign.refresh_from_db()
+        self.assertEqual(foreign.name, "外部")
+
+    def test_unused_work_type_can_be_deleted_but_used_one_cannot(self):
+        AttendanceRecord.objects.create(
+            group=self.group, user=self.user, work_date=self.today,
+            start_time=time(9, 0), end_time=time(10, 0), work_type=self.lesson, hourly_rate=1500,
+        )
+        self.client.force_login(self.admin_user)
+
+        self.client.post(reverse("shift:work_type_delete", args=[self.group.id, self.lesson.id]))
+        self.client.post(reverse("shift:work_type_delete", args=[self.group.id, self.office.id]))
+
+        self.assertTrue(WorkType.objects.filter(id=self.lesson.id).exists())
+        self.assertFalse(WorkType.objects.filter(id=self.office.id).exists())
+
+
+class AttendanceCsvTests(TestCase):
+    """勤怠集計の CSV ダウンロード"""
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create(
+            username="user", username_jp="山田 花子", email="user@example.com", is_active=True,
+        )
+        self.admin_user = user_model.objects.create(
+            username="admin", username_jp="管理 太郎", email="admin@example.com", is_active=True,
+        )
+        self.outsider = user_model.objects.create(
+            username="outsider", username_jp="外部", email="outsider@example.com", is_active=True,
+        )
+        self.group = Group.objects.create(name="shop", name_jp="店舗")
+        self.other_group = Group.objects.create(name="other-shop", name_jp="別店舗")
+        UserGroup.objects.create(user=self.user, group=self.group)
+        UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
+        UserGroup.objects.create(user=self.outsider, group=self.other_group)
+        AttendanceSetting.objects.create(group=self.group, is_enabled=True)
+        self.lesson = WorkType.objects.create(group=self.group, name="授業", hourly_rate=1500, display_order=1)
+        self.office = WorkType.objects.create(group=self.group, name="事務", hourly_rate=1100, display_order=2)
+        self.month_first = timezone.now().date().replace(day=1)
+        self.url = reverse("shift:attendance_summary_csv", args=[self.group.id])
+
+    def _create(self, user, day, start, end, work_type=None, group=None, **kwargs):
+        record = AttendanceRecord(
+            group=group or self.group, user=user, work_date=day, start_time=start, end_time=end, **kwargs,
+        )
+        record.apply_work_type(work_type)
+        record.save()
+        return record
+
+    def _download(self, kind, month=None):
+        response = self.client.get(self.url, {"kind": kind, "month": (month or self.month_first).strftime("%Y-%m")})
+        content = response.content.decode("utf-8")
+        return response, list(csv.reader(content.lstrip("\ufeff").splitlines()))
+
+    def test_csv_requires_group_admin(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(self.url, {"kind": "records"})
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_unknown_kind_is_not_found(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.url, {"kind": "secret"})
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_records_csv_lists_each_record_of_the_month(self):
+        self._create(self.user, self.month_first, time(9, 0), time(12, 0), self.lesson, note="午前")
+        self._create(self.user, self.month_first, time(22, 0), time(1, 30), self.office, break_minutes=30)
+        self._create(self.user, self.month_first - timedelta(days=1), time(9, 0), time(10, 0), self.lesson)
+        self._create(self.outsider, self.month_first, time(9, 0), time(10, 0), group=self.other_group)
+        self.client.force_login(self.admin_user)
+
+        response, rows = self._download("records")
+
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+        self.assertTrue(response.content.startswith("\ufeff".encode("utf-8")))
+        self.assertIn("attachment;", response["Content-Disposition"])
+        self.assertIn(self.month_first.strftime("%Y-%m"), response["Content-Disposition"])
+        self.assertEqual(rows[0], [
+            "勤務日", "曜日", "ユーザー名", "氏名", "仕事内容", "出勤時刻", "退勤時刻", "日またぎ",
+            "休憩（分）", "実働（時:分）", "実働（分）", "時給（円）", "金額（円）", "入力方法", "メモ",
+        ])
+        self.assertEqual(len(rows), 3)
+        day = self.month_first.isoformat()
+        self.assertEqual(rows[1][0], day)
+        self.assertEqual(rows[1][2:], [
+            "user", "山田 花子", "授業", "09:00", "12:00", "", "0", "3:00", "180", "1500", "4500", "手動入力", "午前",
+        ])
+        self.assertEqual(rows[2][4:13], ["事務", "22:00", "01:30", "○", "30", "3:00", "180", "1100", "3300"])
+
+    def test_records_csv_leaves_working_record_blank(self):
+        self._create(self.user, self.month_first, time(9, 0), None, self.lesson)
+        self.client.force_login(self.admin_user)
+
+        _response, rows = self._download("records")
+
+        self.assertEqual(rows[1][6], "")
+        self.assertEqual(rows[1][9:13], ["", "", "1500", ""])
+
+    def test_members_csv_has_totals_and_work_type_columns(self):
+        self._create(self.user, self.month_first, time(9, 0), time(11, 0), self.lesson)
+        self._create(self.user, self.month_first, time(13, 0), time(14, 30), self.office)
+        self._create(self.user, self.month_first + timedelta(days=1), time(9, 0), time(10, 0), self.lesson)
+        self.client.force_login(self.admin_user)
+
+        _response, rows = self._download("members")
+
+        self.assertEqual(rows[0], [
+            "ユーザー名", "氏名", "勤務日数", "実働（時:分）", "実働（分）", "金額（円）",
+            "授業 実働（分）", "授業 金額（円）", "事務 実働（分）", "事務 金額（円）",
+        ])
+        self.assertEqual(rows[1], ["admin", "管理 太郎", "0", "0:00", "0", "0", "0", "0", "0", "0"])
+        self.assertEqual(rows[2], ["user", "山田 花子", "2", "4:30", "270", "6150", "180", "4500", "90", "1650"])
+
+    def test_csv_without_work_types_has_no_amount_columns(self):
+        WorkType.objects.all().delete()
+        self._create(self.user, self.month_first, time(9, 0), time(12, 0))
+        self.client.force_login(self.admin_user)
+
+        _response, record_rows = self._download("records")
+        _response, member_rows = self._download("members")
+
+        self.assertNotIn("金額（円）", record_rows[0])
+        self.assertEqual(member_rows[0], ["ユーザー名", "氏名", "勤務日数", "実働（時:分）", "実働（分）"])
+
+    def test_csv_escapes_text_that_looks_like_a_formula(self):
+        self._create(self.user, self.month_first, time(9, 0), time(12, 0), self.lesson, note="=HYPERLINK(1)")
+        self.client.force_login(self.admin_user)
+
+        _response, rows = self._download("records")
+
+        self.assertEqual(rows[1][-1], "'=HYPERLINK(1)")
+
+    def test_summary_page_links_to_csv(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(reverse("shift:attendance_summary", args=[self.group.id]))
+
+        self.assertContains(response, f"{self.url}?month={self.month_first:%Y-%m}&amp;kind=records")
+        self.assertContains(response, f"{self.url}?month={self.month_first:%Y-%m}&amp;kind=members")
 
 
 class SlackNotificationTests(TestCase):

@@ -20,17 +20,36 @@
       font-weight: 700;
     }
 
-    .attendance-table tbody tr.attendance-row {
+    .attendance-table [data-attendance-action] {
       cursor: pointer;
     }
 
-    .attendance-table tbody tr.attendance-row:hover td {
+    .attendance-table tr[data-attendance-action]:hover td,
+    .attendance-table td[data-attendance-action]:hover {
       filter: brightness(.96);
     }
 
     .attendance-date-cell {
       font-weight: 700;
+      text-align: left !important;
+      vertical-align: top;
+    }
+
+    .attendance-table tr.attendance-add-row td {
+      color: #0d6efd;
+      font-size: .8rem;
+      padding-bottom: .25rem;
+      padding-top: .25rem;
       text-align: left;
+    }
+
+    .attendance-table tr.attendance-add-row:hover td { background: #e7f1ff; filter: none; }
+
+    .attendance-day-records {
+      background: #f8f9fa;
+      border-radius: .375rem;
+      font-size: .85rem;
+      padding: .5rem .75rem;
     }
 
     .attendance-date-sat { color: #1565c0; }
@@ -38,10 +57,18 @@
     .attendance-row-today td { background: #fff8e1; }
     .attendance-row-future td { color: #adb5bd; }
     .attendance-value-empty { color: #ced4da; }
+    .attendance-work-type-cell {
+      max-width: 8rem;
+      overflow: hidden;
+      text-align: left !important;
+      text-overflow: ellipsis;
+    }
+
+    .attendance-amount-cell { text-align: right !important; }
     .attendance-note-cell {
       max-width: 12rem;
       overflow: hidden;
-      text-align: left;
+      text-align: left !important;
       text-overflow: ellipsis;
     }
 
@@ -54,8 +81,9 @@
     @media (max-width: 575.98px) {
       .attendance-table th,
       .attendance-table td { font-size: .78rem; padding: .35rem .2rem; }
-      .attendance-note-cell { display: none; }
-      .attendance-table thead th.attendance-note-head { display: none; }
+      .attendance-work-type-cell { max-width: 4.5rem; }
+      .attendance-note-cell,
+      .attendance-break-cell { display: none; }
     }
   </style>
 {% endblock extrahead %}
@@ -78,27 +106,42 @@
       <div class="card-body">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
           <h2 class="h6 mb-0"><i class="bi bi-stopwatch me-1"></i>本日の打刻（{{ today|date:'n月j日 (D)' }}）</h2>
-          {% if open_record and open_record.work_date != today %}
+          {% if open_record and not is_working_today %}
             <span class="badge text-bg-danger">{{ open_record.work_date|date:'n/j' }} の勤務が継続中</span>
-          {% elif today_record.is_working %}
-            <span class="badge text-bg-success">勤務中（{{ today_record.start_time|time:'H:i' }}〜）</span>
-          {% elif today_record.start_time and today_record.end_time %}
-            <span class="badge text-bg-secondary">
-              退勤済み {{ today_record.start_time|time:'H:i' }}〜{{ today_record.end_time|time:'H:i' }}
-              ／実働 {{ today_record.worked_time_display }}
+          {% elif is_working_today %}
+            <span class="badge text-bg-success">
+              勤務中（{{ open_record.start_time|time:'H:i' }}〜{% if open_record.work_type %} {{ open_record.work_type.name }}{% endif %}）
             </span>
+          {% elif today_worked_display %}
+            <span class="badge text-bg-secondary">退勤済み／本日の実働 {{ today_worked_display }}</span>
           {% else %}
             <span class="badge text-bg-light text-dark">未打刻</span>
           {% endif %}
         </div>
 
+        {% if has_active_work_types and not is_working_today %}
+          <div class="mb-2">
+            <label class="form-label small fw-bold" for="attendanceClockWorkType">仕事内容</label>
+            <select class="form-select" id="attendanceClockWorkType" name="work_type" form="attendanceClockInForm"
+                    required>
+              {% for work_type in work_types %}
+                {% if work_type.is_active %}
+                  <option value="{{ work_type.id }}" {% if work_type.id == default_work_type_id %}selected{% endif %}>
+                    {{ work_type.display_label }}
+                  </option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+        {% endif %}
+
         <div class="row g-2">
           <div class="col-6">
-            <form method="post" action="{% url 'shift:attendance_clock' group.id %}">
+            <form method="post" action="{% url 'shift:attendance_clock' group.id %}" id="attendanceClockInForm">
               {% csrf_token %}
               <input type="hidden" name="action" value="in">
               <button type="submit" class="btn btn-success w-100 attendance-clock-btn"
-                      {% if today_record.start_time %}disabled{% endif %}>
+                      {% if is_working_today %}disabled{% endif %}>
                 <i class="bi bi-box-arrow-in-right me-1"></i>出勤
               </button>
             </form>
@@ -114,6 +157,9 @@
             </form>
           </div>
         </div>
+        {% if has_active_work_types %}
+          <p class="form-text mb-0 mt-2">仕事内容を切り替えるときは、いったん退勤してから出勤し直してください。</p>
+        {% endif %}
       </div>
     </div>
   {% endif %}
@@ -124,10 +170,46 @@
   <div class="d-flex flex-wrap gap-2 mb-3">
     <span class="badge text-bg-primary">勤務日数 {{ totals.worked_days }} 日</span>
     <span class="badge text-bg-dark">実働合計 {{ totals.total_display|default:'0:00' }}</span>
+    {% if work_types %}
+      <span class="badge text-bg-success">金額合計 {{ totals.total_amount_display }}</span>
+    {% endif %}
   </div>
 
+  {% if work_types and totals.by_work_type %}
+    <div class="table-responsive mb-3">
+      <table class="table table-sm table-bordered small mb-0 w-auto">
+        <thead class="table-light">
+        <tr>
+          <th scope="col">仕事内容</th>
+          <th scope="col" class="text-end">実働</th>
+          <th scope="col" class="text-end">金額</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for item in totals.by_work_type %}
+          <tr>
+            <td>{% if item.work_type %}{{ item.work_type.name }}{% else %}<span class="text-muted">未設定</span>{% endif %}</td>
+            <td class="text-end">{{ item.time_display }}</td>
+            <td class="text-end">{{ item.amount_display|default:'-' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
   {% if setting.allow_manual_input %}
-    <p class="small mb-2">日付の行をタップすると、その日の出勤・退勤時刻を入力できます。</p>
+    {# スマホでは追加ボタンを説明文の上に横幅いっぱいで出す #}
+    <div class="d-flex flex-column flex-sm-row-reverse align-items-sm-end justify-content-between gap-2 mb-2">
+      <button type="button" class="btn btn-primary text-nowrap" data-attendance-action="add"
+              data-date="{{ default_add_date|date:'Y-m-d' }}">
+        <i class="bi bi-plus-lg me-1"></i>勤怠を追加
+      </button>
+      <p class="small mb-0">
+        登録済みの行をタップすると修正・削除できます。<br class="d-none d-sm-inline">
+        空いている日の行や「この日に勤怠を追加」からも追加できます（同じ日に何件でも登録できます）。
+      </p>
+    </div>
   {% else %}
     <div class="alert alert-secondary py-2 small" role="alert">
       このグループでは手動入力が許可されていません。修正が必要な場合は管理者に依頼してください。
@@ -139,54 +221,95 @@
       <thead>
       <tr>
         <th scope="col">日付</th>
+        {% if work_types %}<th scope="col">仕事内容</th>{% endif %}
         <th scope="col">出勤</th>
         <th scope="col">退勤</th>
-        <th scope="col">休憩</th>
+        <th scope="col" class="attendance-break-cell">休憩</th>
         <th scope="col">実働</th>
-        <th scope="col" class="attendance-note-head">メモ</th>
+        {% if work_types %}<th scope="col">金額</th>{% endif %}
+        <th scope="col" class="attendance-note-cell">メモ</th>
       </tr>
       </thead>
       <tbody>
-      {% for row in rows %}
-        <tr class="{% if setting.allow_manual_input %}attendance-row{% endif %}{% if row.is_today %} attendance-row-today{% elif row.is_future %} attendance-row-future{% endif %}"
-            {% if setting.allow_manual_input %}
-            data-date="{{ row.work_date|date:'Y-m-d' }}"
-            data-label="{{ row.work_date|date:'n月j日 (D)' }}"
-            data-start="{{ row.record.start_time|time:'H:i' }}"
-            data-end="{{ row.record.end_time|time:'H:i' }}"
-            data-break-minutes="{{ row.record.break_minutes|default_if_none:'' }}"
-            data-note="{{ row.record.note|default:'' }}"
-            {% endif %}>
-          <td class="attendance-date-cell">
-            <span class="{% if row.is_sunday %}attendance-date-sun{% elif row.is_saturday %}attendance-date-sat{% endif %}">
-              {{ row.work_date|date:'j' }}日({{ row.work_date|date:'D' }})
-            </span>
-            {% if row.opening_schedule %}
-              <span class="badge text-bg-light text-muted fw-normal">
-                {{ row.opening_schedule.schedule_type.name|truncatechars:6 }}
-              </span>
-            {% endif %}
-          </td>
-          <td>{% if row.record.start_time %}{{ row.record.start_time|time:'H:i' }}{% else %}<span class="attendance-value-empty">--:--</span>{% endif %}</td>
-          <td>
-            {% if row.record.end_time %}
-              {{ row.record.end_time|time:'H:i' }}{% if row.record.is_overnight %}<sup class="text-muted">翌</sup>{% endif %}
-            {% else %}
-              <span class="attendance-value-empty">--:--</span>
-            {% endif %}
-          </td>
-          <td>{% if row.record.break_minutes %}{{ row.record.break_minutes }}分{% else %}<span class="attendance-value-empty">-</span>{% endif %}</td>
-          <td class="fw-bold">
-            {% if row.record.worked_time_display %}
-              {{ row.record.worked_time_display }}
-            {% elif row.record.is_working %}
-              <span class="badge text-bg-success">勤務中</span>
-            {% else %}
-              <span class="attendance-value-empty">-</span>
-            {% endif %}
-          </td>
-          <td class="attendance-note-cell small text-muted">{{ row.record.note|default:'' }}</td>
-        </tr>
+      {% for day in days %}
+        {% if day.records %}
+          {% for record in day.records %}
+            <tr class="{% if day.is_today %}attendance-row-today{% elif day.is_future %}attendance-row-future{% endif %}"
+                {% if setting.allow_manual_input %}
+                data-attendance-action="edit"
+                data-date="{{ day.work_date|date:'Y-m-d' }}"
+                data-label="{{ day.work_date|date:'n月j日 (D)' }}"
+                data-record-id="{{ record.id }}"
+                data-work-type="{{ record.work_type_id|default_if_none:'' }}"
+                data-start="{{ record.start_time|time:'H:i' }}"
+                data-end="{{ record.end_time|time:'H:i' }}"
+                data-break-minutes="{{ record.break_minutes|default_if_none:'' }}"
+                data-note="{{ record.note|default:'' }}"
+                {% endif %}>
+              {% if forloop.first %}
+                <td class="attendance-date-cell" rowspan="{{ day.rowspan }}"
+                    {% if setting.allow_manual_input %}
+                    data-attendance-action="add"
+                    data-date="{{ day.work_date|date:'Y-m-d' }}"
+                    {% endif %}>
+                  {% include 'shift/_attendance_date_label.html' %}
+                </td>
+              {% endif %}
+              {% if work_types %}
+                <td class="attendance-work-type-cell">
+                  {% if record.work_type %}{{ record.work_type.name }}{% else %}<span class="attendance-value-empty">-</span>{% endif %}
+                </td>
+              {% endif %}
+              <td>{% if record.start_time %}{{ record.start_time|time:'H:i' }}{% else %}<span class="attendance-value-empty">--:--</span>{% endif %}</td>
+              <td>
+                {% if record.end_time %}
+                  {{ record.end_time|time:'H:i' }}{% if record.is_overnight %}<sup class="text-muted">翌</sup>{% endif %}
+                {% else %}
+                  <span class="attendance-value-empty">--:--</span>
+                {% endif %}
+              </td>
+              <td class="attendance-break-cell">{% if record.break_minutes %}{{ record.break_minutes }}分{% else %}<span class="attendance-value-empty">-</span>{% endif %}</td>
+              <td class="fw-bold">
+                {% if record.worked_time_display %}
+                  {{ record.worked_time_display }}
+                {% elif record.is_working %}
+                  <span class="badge text-bg-success">勤務中</span>
+                {% else %}
+                  <span class="attendance-value-empty">-</span>
+                {% endif %}
+              </td>
+              {% if work_types %}
+                <td class="attendance-amount-cell">
+                  {% if record.amount_display %}{{ record.amount_display }}{% else %}<span class="attendance-value-empty">-</span>{% endif %}
+                </td>
+              {% endif %}
+              <td class="attendance-note-cell small text-muted">{{ record.note|default:'' }}</td>
+            </tr>
+          {% endfor %}
+          {% if setting.allow_manual_input %}
+            <tr class="attendance-add-row {% if day.is_today %}attendance-row-today{% endif %}"
+                data-attendance-action="add" data-date="{{ day.work_date|date:'Y-m-d' }}">
+              <td colspan="{% if work_types %}7{% else %}5{% endif %}">
+                <i class="bi bi-plus-lg me-1"></i>この日に勤怠を追加
+              </td>
+            </tr>
+          {% endif %}
+        {% else %}
+          <tr class="{% if day.is_today %}attendance-row-today{% elif day.is_future %}attendance-row-future{% endif %}"
+              {% if setting.allow_manual_input %}
+              data-attendance-action="add"
+              data-date="{{ day.work_date|date:'Y-m-d' }}"
+              {% endif %}>
+            <td class="attendance-date-cell">{% include 'shift/_attendance_date_label.html' %}</td>
+            {% if work_types %}<td><span class="attendance-value-empty">-</span></td>{% endif %}
+            <td><span class="attendance-value-empty">--:--</span></td>
+            <td><span class="attendance-value-empty">--:--</span></td>
+            <td class="attendance-break-cell"><span class="attendance-value-empty">-</span></td>
+            <td><span class="attendance-value-empty">-</span></td>
+            {% if work_types %}<td><span class="attendance-value-empty">-</span></td>{% endif %}
+            <td class="attendance-note-cell"></td>
+          </tr>
+        {% endif %}
       {% endfor %}
       </tbody>
     </table>
@@ -197,48 +320,44 @@
     <div class="modal fade" id="attendanceModal" tabindex="-1" aria-labelledby="attendanceModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
-          <form method="post">
+          <form method="post" id="attendanceForm">
             {% csrf_token %}
             <input type="hidden" name="month" value="{{ current_month_value }}">
-            <input type="hidden" name="work_date" id="attendanceWorkDate" value="">
+            <input type="hidden" name="record_id" id="attendanceRecordId" value="">
+            <input type="hidden" name="action" id="attendanceAction" value="save">
             <div class="modal-header">
-              <h5 class="modal-title" id="attendanceModalLabel">勤怠の入力</h5>
+              <h5 class="modal-title" id="attendanceModalLabel">勤怠を追加</h5>
               <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
             </div>
             <div class="modal-body">
-              <div class="row g-3">
-                <div class="col-6">
-                  <label class="form-label small fw-bold" for="attendanceStart">出勤時刻</label>
-                  <input type="time" class="form-control" id="attendanceStart" name="start_time">
-                </div>
-                <div class="col-6">
-                  <label class="form-label small fw-bold" for="attendanceEnd">退勤時刻</label>
-                  <input type="time" class="form-control" id="attendanceEnd" name="end_time">
-                  <div class="form-text">出勤より前の時刻は翌日の退勤として扱います。</div>
-                </div>
-                <div class="col-6">
-                  <label class="form-label small fw-bold" for="attendanceBreak">休憩（分）</label>
-                  <input type="number" class="form-control" id="attendanceBreak" name="break_minutes"
-                         min="0" step="5" placeholder="0">
-                </div>
-                <div class="col-12">
-                  <label class="form-label small fw-bold" for="attendanceNote">メモ（任意）</label>
-                  <input type="text" class="form-control" id="attendanceNote" name="note" maxlength="200"
-                         placeholder="例: 直行直帰">
-                </div>
+              <div class="mb-3" id="attendanceDateGroup">
+                <label class="form-label small fw-bold" for="attendanceWorkDate">日付</label>
+                <input type="date" class="form-control" id="attendanceWorkDate" name="work_date" required
+                       min="{{ month_from|date:'Y-m-d' }}" max="{{ month_to|date:'Y-m-d' }}">
               </div>
-              <p class="form-text mb-0 mt-3">
-                出勤・退勤の両方を空にして登録すると、その日の勤怠を削除します。
-              </p>
+              <div class="attendance-day-records mb-3 d-none" id="attendanceDayRecords">
+                <div class="fw-bold small mb-1" id="attendanceDayRecordsLabel">この日の登録済みの勤怠</div>
+                <ul class="list-unstyled mb-0" id="attendanceDayRecordList"></ul>
+                <div class="form-text mt-1">これらと時間が重ならないように入力してください。</div>
+              </div>
+              {% include 'shift/_attendance_record_fields.html' with prefix='attendance' %}
             </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
-              <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>登録</button>
+            <div class="modal-footer justify-content-between">
+              <button type="button" class="btn btn-outline-danger d-none" id="attendanceDelete">
+                <i class="bi bi-trash me-1"></i>削除
+              </button>
+              <div class="d-flex gap-2 ms-auto">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+                <button type="submit" class="btn btn-primary">
+                  <i class="bi bi-check-lg me-1"></i><span id="attendanceSubmitLabel">追加する</span>
+                </button>
+              </div>
             </div>
           </form>
         </div>
       </div>
     </div>
+    {{ records_payload|json_script:"attendanceRecordsByDate" }}
   {% endif %}
 {% endblock content %}
 
@@ -246,25 +365,137 @@
   {% if setting.allow_manual_input %}
     <script>
       document.addEventListener("DOMContentLoaded", function () {
+        const recordsByDate = JSON.parse(document.getElementById("attendanceRecordsByDate").textContent);
         const modalEl = document.getElementById("attendanceModal");
         const modal = new bootstrap.Modal(modalEl);
+        const form = document.getElementById("attendanceForm");
+        const dateGroup = document.getElementById("attendanceDateGroup");
         const workDateInput = document.getElementById("attendanceWorkDate");
+        const recordIdInput = document.getElementById("attendanceRecordId");
+        const actionInput = document.getElementById("attendanceAction");
+        const workTypeSelect = document.getElementById("attendanceWorkType");
         const startInput = document.getElementById("attendanceStart");
         const endInput = document.getElementById("attendanceEnd");
         const breakInput = document.getElementById("attendanceBreak");
         const noteInput = document.getElementById("attendanceNote");
         const modalLabel = document.getElementById("attendanceModalLabel");
+        const submitLabel = document.getElementById("attendanceSubmitLabel");
+        const deleteButton = document.getElementById("attendanceDelete");
+        const dayRecordsBox = document.getElementById("attendanceDayRecords");
+        const dayRecordsLabel = document.getElementById("attendanceDayRecordsLabel");
+        const dayRecordList = document.getElementById("attendanceDayRecordList");
+        const defaultWorkType = "{{ default_work_type_id }}";
+        let editingId = "";
+        let suggestedStart = "";
 
-        document.querySelectorAll("tr.attendance-row").forEach(function (row) {
-          row.addEventListener("click", function () {
-            workDateInput.value = row.dataset.date;
-            modalLabel.textContent = row.dataset.label + " の勤怠";
-            startInput.value = row.dataset.start || "";
-            endInput.value = row.dataset.end || "";
-            breakInput.value = row.dataset.breakMinutes || "";
-            noteInput.value = row.dataset.note || "";
-            modal.show();
+        // 無効にした仕事内容は、その仕事内容の勤怠を編集するときだけ選択肢に出す
+        const selectWorkType = function (value) {
+          if (!workTypeSelect) {
+            return;
+          }
+          Array.from(workTypeSelect.options).forEach(function (option) {
+            if (option.dataset.inactive) {
+              option.hidden = option.value !== value;
+            }
           });
+          workTypeSelect.value = value;
+        };
+
+        // 追加するときの出勤時刻は、その日の最後の勤怠の退勤時刻から始める
+        const lastEndOf = function (date) {
+          const records = recordsByDate[date] || [];
+          for (let i = records.length - 1; i >= 0; i -= 1) {
+            if (records[i].end) {
+              return records[i].end;
+            }
+          }
+          return "";
+        };
+
+        // その日に登録済みの勤怠（修正中のものは除く）を一覧で見せる
+        const showDayRecords = function (date) {
+          const records = (recordsByDate[date] || []).filter(function (record) {
+            return String(record.id) !== editingId;
+          });
+          dayRecordList.replaceChildren();
+          records.forEach(function (record) {
+            const item = document.createElement("li");
+            const parts = [];
+            if (record.work_type_name) {
+              parts.push(record.work_type_name);
+            }
+            parts.push((record.start || "--:--") + "〜" + (record.end || "--:--") + (record.overnight ? "(翌)" : ""));
+            item.textContent = "・" + parts.join(" ");
+            dayRecordList.appendChild(item);
+          });
+          dayRecordsLabel.textContent = editingId ? "この日のほかの勤怠" : "この日の登録済みの勤怠";
+          dayRecordsBox.classList.toggle("d-none", records.length === 0);
+        };
+
+        const openAdd = function (date) {
+          editingId = "";
+          suggestedStart = lastEndOf(date);
+          recordIdInput.value = "";
+          actionInput.value = "save";
+          workDateInput.value = date;
+          dateGroup.classList.remove("d-none");
+          modalLabel.textContent = "勤怠を追加";
+          submitLabel.textContent = "追加する";
+          selectWorkType(defaultWorkType);
+          startInput.value = suggestedStart;
+          endInput.value = "";
+          breakInput.value = "";
+          noteInput.value = "";
+          deleteButton.classList.add("d-none");
+          showDayRecords(date);
+          modal.show();
+        };
+
+        const openEdit = function (data) {
+          editingId = data.recordId;
+          recordIdInput.value = data.recordId;
+          actionInput.value = "save";
+          workDateInput.value = data.date;
+          dateGroup.classList.add("d-none");
+          modalLabel.textContent = data.label + " の勤怠を修正";
+          submitLabel.textContent = "保存する";
+          selectWorkType(data.workType || "");
+          startInput.value = data.start || "";
+          endInput.value = data.end || "";
+          breakInput.value = data.breakMinutes || "";
+          noteInput.value = data.note || "";
+          deleteButton.classList.remove("d-none");
+          showDayRecords(data.date);
+          modal.show();
+        };
+
+        workDateInput.addEventListener("change", function () {
+          // 出勤時刻を自分で変えていなければ、選び直した日に合わせて入れ直す
+          if (startInput.value === suggestedStart) {
+            suggestedStart = lastEndOf(workDateInput.value);
+            startInput.value = suggestedStart;
+          }
+          showDayRecords(workDateInput.value);
+        });
+
+        document.querySelectorAll("[data-attendance-action]").forEach(function (element) {
+          element.addEventListener("click", function (event) {
+            // 日付のセル（追加）は行（修正）の中にあるので、行のクリックまで伝わらないようにする
+            event.stopPropagation();
+            if (element.dataset.attendanceAction === "edit") {
+              openEdit(element.dataset);
+            } else {
+              openAdd(element.dataset.date);
+            }
+          });
+        });
+
+        deleteButton.addEventListener("click", function () {
+          if (!confirm("この勤怠を削除しますか？")) {
+            return;
+          }
+          actionInput.value = "delete";
+          form.submit();
         });
       });
     </script>

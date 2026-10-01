@@ -14,6 +14,8 @@ import socket
 
 from pathlib import Path
 
+from django.contrib.messages import constants as message_constants
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -147,6 +149,9 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "/"
+
+# messages.error() を Bootstrap の alert-danger で表示する（既定のタグ "error" には対応する色がない）
+MESSAGE_TAGS = {message_constants.ERROR: "danger"}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field

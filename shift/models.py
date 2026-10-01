@@ -232,17 +232,48 @@ class AttendanceSetting(models.Model):
         return "%s: %s" % (self.group, "有効" if self.is_enabled else "無効")
 
 
-class AttendanceRecord(models.Model):
-    """ユーザーの1日ぶんの勤怠実績（出勤・退勤・休憩）"""
+class WorkType(models.Model):
+    """グループごとの仕事内容（勤怠の項目）と時給"""
 
     class Meta:
-        ordering = ("work_date",)
+        ordering = ("display_order", "name")
         constraints = [
             models.UniqueConstraint(
-                fields=("group", "user", "work_date"),
-                name="attendance_record_unique_day",
+                fields=("group", "name"),
+                name="work_type_unique_name",
             ),
         ]
+        verbose_name = "仕事内容"
+        verbose_name_plural = "仕事内容"
+
+    created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField("更新日", auto_now=True)
+    group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE, related_name="work_types",
+                              verbose_name="グループ")
+    name = models.CharField("仕事内容", max_length=100)
+    hourly_rate = models.PositiveIntegerField("時給（円）", default=0)
+    is_active = models.BooleanField("有効", default=True)
+    display_order = models.PositiveSmallIntegerField("表示順", default=100)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return f"{self.group}: {self.name}"
+
+    @property
+    def hourly_rate_display(self):
+        return format_yen(self.hourly_rate)
+
+    @property
+    def display_label(self):
+        """選択肢に出す「仕事内容（時給）」の表記"""
+        return f"{self.name}（{self.hourly_rate_display}/時）"
+
+
+class AttendanceRecord(models.Model):
+    """ユーザーの勤怠実績（出勤・退勤・休憩）。同じ日に複数件登録できる"""
+
+    class Meta:
+        ordering = ("work_date", "start_time", "id")
         indexes = [
             models.Index(fields=("group", "work_date")),
             models.Index(fields=("user", "work_date")),
@@ -264,6 +295,10 @@ class AttendanceRecord(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                              related_name="attendance_records", verbose_name="ユーザー")
     work_date = models.DateField("勤務日", db_index=True)
+    work_type = models.ForeignKey(WorkType, on_delete=models.PROTECT, null=True, blank=True,
+                                  related_name="attendance_records", verbose_name="仕事内容")
+    # 仕事内容の時給を登録時点で写しておく。時給を変更しても登録済みの勤怠の金額は変わらない
+    hourly_rate = models.PositiveIntegerField("時給（円）", null=True, blank=True)
     start_time = models.TimeField("出勤時刻", null=True, blank=True)
     end_time = models.TimeField("退勤時刻", null=True, blank=True)
     break_minutes = models.PositiveSmallIntegerField("休憩時間（分）", default=0)
@@ -278,6 +313,11 @@ class AttendanceRecord(models.Model):
             self.end_time.strftime("%H:%M") if self.end_time else "--:--",
         )
 
+    def apply_work_type(self, work_type):
+        """仕事内容を設定し、その時点の時給を写しておく"""
+        self.work_type = work_type
+        self.hourly_rate = work_type.hourly_rate if work_type else None
+
     @property
     def is_working(self):
         """出勤済みで、まだ退勤していない状態"""
@@ -289,20 +329,79 @@ class AttendanceRecord(models.Model):
         return bool(self.start_time and self.end_time and self.end_time < self.start_time)
 
     @property
+    def minute_range(self):
+        """勤務日の 0:00 を起点にした (出勤, 退勤) の分。出勤がなければ None、退勤がなければ退勤は None"""
+        return minute_range(self.start_time, self.end_time)
+
+    @property
     def worked_minutes(self):
         """休憩を除いた実働時間（分）。出勤・退勤が揃っていない場合は None"""
-        if not self.start_time or not self.end_time:
+        span = self.minute_range
+        if span is None or span[1] is None:
             return None
-        start = self.start_time.hour * 60 + self.start_time.minute
-        end = self.end_time.hour * 60 + self.end_time.minute
-        if end < start:  # 日をまたぐ勤務は翌日の退勤として扱う
-            end += 24 * 60
-        return max(end - start - self.break_minutes, 0)
+        return max(span[1] - span[0] - self.break_minutes, 0)
 
     @property
     def worked_time_display(self):
         """実働時間を H:MM 形式で返す"""
         return minutes_to_hhmm(self.worked_minutes)
+
+    @property
+    def amount(self):
+        """実働時間 × 時給の金額（円）。1 円未満は四捨五入。計算できない場合は None"""
+        return calculate_amount(self.worked_minutes, self.hourly_rate)
+
+    @property
+    def amount_display(self):
+        return format_yen(self.amount)
+
+
+def minute_range(start_time, end_time):
+    """出勤・退勤時刻を勤務日の 0:00 起点の分に直す（日をまたぐ退勤は 24:00 以降として扱う）"""
+    if not start_time:
+        return None
+    start = start_time.hour * 60 + start_time.minute
+    if not end_time:
+        return (start, None)
+    end = end_time.hour * 60 + end_time.minute
+    if end < start:  # 日をまたぐ勤務は翌日の退勤として扱う
+        end += 24 * 60
+    return (start, end)
+
+
+def find_overlapping_record(records, start_time, end_time):
+    """同じ日の勤怠のうち、指定した時間帯と重なるものを返す（なければ None）
+
+    退勤が未記録の勤怠は出勤時刻の 1 分間だけを占めるものとして扱う。
+    同じ時刻に出勤した勤怠を二重に登録しないためで、終わりの見えない勤務と
+    後から登録する勤怠を重複扱いにはしない。
+    """
+    span = minute_range(start_time, end_time)
+    if span is None:
+        return None
+    start, end = span[0], span[1] if span[1] is not None else span[0] + 1
+    for record in records:
+        other = record.minute_range
+        if other is None:
+            continue
+        other_start, other_end = other[0], other[1] if other[1] is not None else other[0] + 1
+        if start < other_end and other_start < end:
+            return record
+    return None
+
+
+def calculate_amount(minutes, hourly_rate):
+    """分と時給から金額（円）を求める。1 円未満は四捨五入"""
+    if minutes is None or hourly_rate is None:
+        return None
+    return (minutes * hourly_rate + 30) // 60
+
+
+def format_yen(amount):
+    """金額を「1,234円」の形にする（None は空文字）"""
+    if amount is None:
+        return ""
+    return f"{amount:,}円"
 
 
 def minutes_to_hhmm(minutes):
