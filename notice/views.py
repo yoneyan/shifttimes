@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from notice.forms import NoticeForm
 from notice.models import Notice
-from shift.models import ShiftEntry, ShiftDeadline
+from shift.models import ShiftDeadline, ShiftEntry
 
 
 @login_required

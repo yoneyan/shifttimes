@@ -1,7 +1,8 @@
 from django.conf import settings
-from django.contrib.auth import logout as user_logout, authenticate, login as user_login
+from django.contrib.auth import login as user_login
+from django.contrib.auth import logout as user_logout
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import render, redirect
+from django.shortcuts import redirect, render
 from django.utils import timezone
 
 from notice.models import Notice

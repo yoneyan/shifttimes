@@ -5,22 +5,27 @@ import pyotp
 import qrcode
 import qrcode.image.svg
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.views import PasswordResetCompleteView, PasswordResetConfirmView, \
-    PasswordResetView, PasswordResetDoneView
+from django.contrib.auth.views import (
+    PasswordResetCompleteView,
+    PasswordResetConfirmView,
+    PasswordResetDoneView,
+    PasswordResetView,
+)
 from django.shortcuts import redirect, render
 from django.urls import reverse, reverse_lazy
 
 from custom_auth.form import (
     EmailChangeForm,
+    ForgetForm,
     GroupAddForm,
     GroupForm,
     MyPasswordChangeForm,
+    NewSetPasswordForm,
     ProfileEditForm,
     SignUpForm,
-    TwoAuthForm, ForgetForm, NewSetPasswordForm,
+    TwoAuthForm,
 )
-from custom_auth.models import UserGroup, User
-from custom_auth.models import TOTPDevice, UserActivateToken
+from custom_auth.models import TOTPDevice, User, UserActivateToken, UserGroup
 from shift.models import AttendanceSetting, SlackNotificationSetting
 
 

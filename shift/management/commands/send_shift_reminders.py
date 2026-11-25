@@ -11,7 +11,6 @@ from django.utils import timezone
 from shift import slack
 from shift.models import ShiftDeadline, SlackNotificationSetting
 
-
 ACTIVE_GROUP_STATUS = 1
 
 

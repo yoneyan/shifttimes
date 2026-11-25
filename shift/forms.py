@@ -4,13 +4,10 @@ from django.db.models import Q
 from shift.models import (
     AttendanceRecord,
     AttendanceSetting,
-    DateOpeningSchedule,
     OpeningScheduleType,
     ShiftDeadline,
-    ShiftEntry,
     SlackNotificationSetting,
     TimeSlot,
-    WEEKDAY_CHOICES,
     WorkType,
     find_overlapping_record,
 )

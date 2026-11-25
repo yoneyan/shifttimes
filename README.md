@@ -124,7 +124,7 @@ uv run ruff check .
 次を実行します。
 
 - `manage.py makemigrations --check`（マイグレーションの作り忘れ検出）と `manage.py test`
-- `ruff check`（既存コードに指摘が残っているため、現在は結果表示のみで CI は失敗させない）
+- `ruff check`
 - Docker イメージのビルド確認（push はしない）
 
 ## 環境変数

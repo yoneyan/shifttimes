@@ -14,7 +14,6 @@ from django.utils import timezone
 from simple_history.models import HistoricalRecords
 
 from custom_auth.utils import random_string
-from shifttimes.models import MediumTextField
 
 
 class GroupManager(models.Manager):

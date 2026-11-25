@@ -1,8 +1,8 @@
 from django.db.models.signals import post_save, pre_delete
 from django.dispatch import receiver
 
-from shifttimes.notify import notify_delete_db, notify_insert_db, notify_update_db
 from notice.models import Notice
+from shifttimes.notify import notify_delete_db, notify_insert_db, notify_update_db
 
 
 @receiver(post_save, sender=Notice)

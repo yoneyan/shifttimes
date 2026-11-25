@@ -1,7 +1,6 @@
 from custom_auth.models import Group, UserGroup
 from shift.models import AttendanceSetting
 
-
 ACTIVE_GROUP_STATUS = 1
 
 

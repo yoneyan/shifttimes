@@ -1,6 +1,8 @@
-import json
 import calendar as cal_module
-from datetime import date as date_type, time as time_type, timedelta
+import json
+from datetime import date as date_type
+from datetime import time as time_type
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -22,15 +24,14 @@ from shift.forms import (
     TimeSlotForm,
 )
 from shift.models import (
+    WEEKDAY_CHOICES,
     AttendanceSetting,
     DateOpeningSchedule,
     OpeningScheduleType,
     ShiftDeadline,
     ShiftEntry,
     TimeSlot,
-    WEEKDAY_CHOICES,
 )
-
 
 ACTIVE_GROUP_STATUS = 1
 
@@ -1025,6 +1026,17 @@ def deadline_delete(request, group_id, deadline_id):
     return redirect("shift:schedule_settings", group_id=group.id)
 
 
+def _submission_status(answered_days, target_days):
+    """提出状況のステータスと表示ラベルを返す（target_days は入力対象日数）"""
+    if not target_days:
+        return "na", "対象日なし"
+    if answered_days >= target_days:
+        return "done", "提出済"
+    if answered_days:
+        return "partial", "一部"
+    return "none", "未提出"
+
+
 @login_required
 def summary(request, group_id):
     """グループ管理者向けのシフト希望サマリ（提出状況）"""
@@ -1153,18 +1165,7 @@ def summary(request, group_id):
                 "has_any": has_any,
             })
 
-        if not target_days:
-            status = "na"
-            status_label = "対象日なし"
-        elif answered_days >= target_days:
-            status = "done"
-            status_label = "提出済"
-        elif answered_days:
-            status = "partial"
-            status_label = "一部"
-        else:
-            status = "none"
-            status_label = "未提出"
+        status, status_label = _submission_status(answered_days, target_days)
 
         member_rows.append({
             "member": member,

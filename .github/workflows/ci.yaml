@@ -47,9 +47,6 @@ jobs:
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest
-    # 既存コードに未解消の指摘が残っているため、現時点では結果の表示のみ（CI は失敗させない）。
-    # 指摘を解消したらこの行を削除してブロッキングにする。
-    continue-on-error: true
     steps:
       - name: Check out the repo
         uses: actions/checkout@v7

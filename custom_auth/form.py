@@ -1,6 +1,5 @@
 from django import forms
-from django.contrib.auth.forms import PasswordChangeForm, PasswordResetForm, SetPasswordForm, \
-    AuthenticationForm
+from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm, PasswordResetForm, SetPasswordForm
 
 from custom_auth.models import Group, User, UserGroup
 
@@ -39,20 +38,20 @@ class GroupAddForm(forms.Form):
                 address_jp=self.cleaned_data["address_jp"],
                 phone=self.cleaned_data["phone"],
             )
-        except Exception:
-            raise ValueError("グループの登録に失敗しました(名前が被っている可能性があります)")
+        except Exception as e:
+            raise ValueError("グループの登録に失敗しました(名前が被っている可能性があります)") from e
 
         try:
             user = User.objects.get(id=user_id)
             user.allow_group_add = False
             user.save()
-        except Exception:
-            raise ValueError("ユーザ情報の変更に失敗しました")
+        except Exception as e:
+            raise ValueError("ユーザ情報の変更に失敗しました") from e
 
         try:
             UserGroup.objects.create(user=user, group=group, is_admin=True)
-        except Exception:
-            raise ValueError("ユーザとグループの紐づけに失敗しました")
+        except Exception as e:
+            raise ValueError("ユーザとグループの紐づけに失敗しました") from e
 
 
 class StudentEditForm(forms.Form):
@@ -83,20 +82,20 @@ class StudentEditForm(forms.Form):
                 phone=self.cleaned_data["phone"],
                 country=self.cleaned_data["country"],
             )
-        except Exception:
-            raise ValueError("グループの登録に失敗しました(名前が被っている可能性があります。)")
+        except Exception as e:
+            raise ValueError("グループの登録に失敗しました(名前が被っている可能性があります。)") from e
 
         try:
             user = User.objects.get(id=user_id)
             user.group_add = False
             user.save()
-        except Exception:
-            raise ValueError("ユーザ情報の変更に失敗しました")
+        except Exception as e:
+            raise ValueError("ユーザ情報の変更に失敗しました") from e
 
         try:
             UserGroup.objects.create(user=user, group=group, is_admin=True)
-        except Exception:
-            raise ValueError("ユーザとグループの紐づけに失敗しました")
+        except Exception as e:
+            raise ValueError("ユーザとグループの紐づけに失敗しました") from e
 
 
 class GroupForm(forms.ModelForm):
@@ -167,8 +166,8 @@ class EmailChangeForm(forms.Form):
     def save(self, user):
         try:
             User.objects.change_email(user=user, email=self.cleaned_data["email"])
-        except Exception:
-            raise ValueError("更新に失敗しました")
+        except Exception as e:
+            raise ValueError("更新に失敗しました") from e
 
 
 class ProfileEditForm(forms.Form):
@@ -191,8 +190,8 @@ class ProfileEditForm(forms.Form):
                 name_jp=self.cleaned_data["username_jp"],
                 display_name=self.cleaned_data["display_name"],
             )
-        except Exception:
-            raise ValueError("更新に失敗しました")
+        except Exception as e:
+            raise ValueError("更新に失敗しました") from e
 
 
 class LoginForm(AuthenticationForm):

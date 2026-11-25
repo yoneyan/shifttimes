@@ -14,7 +14,6 @@ from slack_sdk import WebhookClient
 from custom_auth.models import UserGroup
 from shift.models import ShiftEntry, SlackNotificationSetting
 
-
 logger = logging.getLogger(__name__)
 
 # Webhook の応答待ちで画面の操作が止まらないよう、短めに区切る

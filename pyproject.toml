@@ -56,6 +56,9 @@ select = [
     "B", # flake8-bugbear
     "UP", # pyupgrade
 ]
+ignore = [
+    "UP031", # % 形式の文字列整形はコードベース全体の書き方として許容する
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

@@ -6,5 +6,5 @@ class MediumTextField(models.TextField):
         if connection.settings_dict["ENGINE"] == "django.db.backends.mysql":
             return "mediumtext"
         else:
-            return super(MediumTextField, self).db_type(connection=connection)
+            return super().db_type(connection=connection)
 

@@ -2,7 +2,6 @@ from django import forms
 
 from notice.models import Notice
 
-
 DATETIME_LOCAL_FORMAT = "%Y-%m-%dT%H:%M"
 
 

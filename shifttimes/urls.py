@@ -15,12 +15,12 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.conf import settings
-from django.contrib import admin
 from django.conf.urls.static import static
-from django.urls import path, include
+from django.contrib import admin
+from django.urls import include, path
 
-from custom_auth.views import activate_user
 from custom_auth.billing_views import stripe_webhook
+from custom_auth.views import activate_user
 from shifttimes import views
 
 urlpatterns = [
