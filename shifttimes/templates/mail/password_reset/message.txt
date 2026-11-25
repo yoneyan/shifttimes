@@ -1,0 +1,10 @@
+{% autoescape off %}{{ user.username }} 様
+
+{{ site_name }} のパスワード再設定のリクエストを受け付けました。
+以下のURLにアクセスして、新しいパスワードを設定してください。
+
+{{ site_url }}{% url 'custom_auth_forget:confirm' uidb64=uid token=token %}
+
+このメールに心当たりがない場合は、このメールを破棄してください。
+パスワードは変更されません。
+{% endautoescape %}

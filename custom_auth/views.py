@@ -4,6 +4,7 @@ from io import BytesIO
 import pyotp
 import qrcode
 import qrcode.image.svg
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import (
     PasswordResetCompleteView,
@@ -337,7 +338,13 @@ class PasswordReset(PasswordResetView):
     email_template_name = "mail/password_reset/message.txt"
     template_name = "forget/index.html"
     form_class = ForgetForm
-    success_url = reverse_lazy("password_reset_done")
+    success_url = reverse_lazy("custom_auth_forget:done")
+
+    @property
+    def extra_email_context(self):
+        # リクエストの Host ヘッダではなく設定値から URL を組み立て、
+        # ALLOWED_HOSTS が緩い環境でもリセットリンクの差し替えを防ぐ
+        return {"site_name": settings.SITE_NAME, "site_url": settings.DOMAIN_URL.rstrip("/")}
 
 
 class PasswordResetDone(PasswordResetDoneView):
@@ -346,7 +353,7 @@ class PasswordResetDone(PasswordResetDoneView):
 
 class PasswordResetConfirm(PasswordResetConfirmView):
     form_class = NewSetPasswordForm
-    success_url = reverse_lazy("password_reset_complete")
+    success_url = reverse_lazy("custom_auth_forget:complete")
     template_name = "forget/confirm.html"
 
 
