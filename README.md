@@ -118,6 +118,15 @@ Lint は ruff で行います。
 uv run ruff check .
 ```
 
+### CI
+
+`.github/workflows/ci.yaml` が `master` / `develop` への push と Pull Request で
+次を実行します。
+
+- `manage.py makemigrations --check`（マイグレーションの作り忘れ検出）と `manage.py test`
+- `ruff check`（既存コードに指摘が残っているため、現在は結果表示のみで CI は失敗させない）
+- Docker イメージのビルド確認（push はしない）
+
 ## 環境変数
 
 すべて省略可能で、括弧内が既定値です。本番では最低限 `SECRET_KEY`、`DEBUG`、
@@ -196,6 +205,26 @@ uv run ruff check .
 ```bash
 docker build -t shifttimes .
 docker run -p 8010:8010 --env-file .env shifttimes
+```
+
+### リリース
+
+`v` で始まるタグを push すると `.github/workflows/release.yaml` が動き、
+テストが通った場合に限り次を行います。
+
+1. イメージを GitHub Container Registry（`ghcr.io/yoneyan/shifttimes`）へ push
+   （`v1.2.3` なら `1.2.3` / `1.2` / `1` / `latest` / `sha-xxxxxxx` タグ）
+2. 前回タグからのコミット一覧を本文にした GitHub Release を作成
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+`v1.3.0-rc.1` のようにハイフンを含むタグはプレリリース扱いになり、`latest` は更新されません。
+
+```bash
+docker pull ghcr.io/yoneyan/shifttimes:latest
 ```
 
 コンテナ起動時（`files/entrypoint.sh`）に未適用のマイグレーションがあれば自動で

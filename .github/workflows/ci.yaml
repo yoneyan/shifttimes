@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+  # release.yaml からタグ push 時に呼び出し、テストが通った場合のみイメージを公開する
+  workflow_call:
+    inputs:
+      skip-docker-build:
+        description: "Docker イメージのビルド確認をスキップする（リリース側で本ビルドする場合）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Check for missing migrations
+        run: uv run --frozen python manage.py makemigrations --check --dry-run
+
+      - name: Run tests
+        run: uv run --frozen python manage.py test --verbosity 2
+
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    # 既存コードに未解消の指摘が残っているため、現時点では結果の表示のみ（CI は失敗させない）。
+    # 指摘を解消したらこの行を削除してブロッキングにする。
+    continue-on-error: true
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run ruff
+        run: uv run --frozen ruff check --output-format=github .
+
+  docker-build:
+    name: Docker build check
+    if: ${{ !inputs.skip-docker-build }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
