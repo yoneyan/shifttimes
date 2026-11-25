@@ -217,7 +217,14 @@ class OTPForm(forms.Form):
 
 
 class AuthTOTP(forms.Form):
-    token = forms.IntegerField(label="totp", required=True)
+    # IntegerField だと先頭の 0 が落ちて正しいコードでも通らないので文字列で受ける
+    token = forms.RegexField(
+        label="認証コード",
+        regex=r"^\d{6}$",
+        max_length=6,
+        required=True,
+        error_messages={"invalid": "6桁の数字を入力してください"},
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

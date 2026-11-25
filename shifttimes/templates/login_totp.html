@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block title %}2段階認証 | {% endblock %}
+{% block page_header %}{% endblock %}
+{% block content %}
+  <div class="d-flex justify-content-center">
+    <div class="card shadow-sm" style="max-width: 420px; width: 100%;">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-3 text-center">2段階認証</h1>
+        <p class="small text-muted">認証アプリに表示されている6桁のコードを入力してください。</p>
+
+        {% if error %}
+          <div class="alert alert-danger" role="alert">{{ error }}</div>
+        {% endif %}
+
+        <form method="post" novalidate>
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label" for="{{ form.token.id_for_label }}">{{ form.token.label }}</label>
+            <input type="text" name="{{ form.token.html_name }}" id="{{ form.token.id_for_label }}"
+                   class="form-control" inputmode="numeric" autocomplete="one-time-code"
+                   pattern="[0-9]{6}" maxlength="6" required autofocus>
+            {% for err in form.token.errors %}
+              <div class="invalid-feedback d-block">{{ err }}</div>
+            {% endfor %}
+          </div>
+          <button class="btn btn-primary w-100" type="submit">確認</button>
+        </form>
+
+        <div class="text-center mt-3">
+          <a href="{% url 'login' %}" class="small">ログイン画面に戻る</a>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock content %}

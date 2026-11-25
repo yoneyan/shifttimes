@@ -1,13 +1,18 @@
 from django.conf import settings
-from django.contrib.auth import login as user_login
+from django.contrib import messages
 from django.contrib.auth import logout as user_logout
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
+from custom_auth import two_factor
+from custom_auth.form import AuthTOTP
 from notice.models import Notice
 from shift.models import ShiftEntry
 from shifttimes.form import LoginForm
+
+TOTP_EXPIRED_MESSAGE = "2段階認証の有効期限が切れました。もう一度ログインしてください。"
+TOTP_LOCKED_MESSAGE = "認証コードの誤りが続いたため、もう一度ログインからやり直してください。"
 
 
 def index(request):
@@ -47,13 +52,37 @@ def login(request):
         if form.is_valid():
             user = form.get_user()
             if user:
-                user_login(request, user)
-                return redirect("/")
+                # TOTP デバイスを登録しているユーザは、ここではまだログインさせない
+                if two_factor.login_or_start_totp(request, user, backend=user.backend):
+                    return redirect("/")
+                return redirect("login_totp")
 
     else:
         form = LoginForm()
     context = {'form': form}
     return render(request, "login.html", context)
+
+
+def login_totp(request):
+    """パスワード（または LINE）確認後の 2 段階認証コード入力"""
+    user = two_factor.get_pending_user(request)
+    if user is None:
+        messages.error(request, TOTP_EXPIRED_MESSAGE)
+        return redirect("login")
+
+    error = None
+    if request.method == "POST":
+        form = AuthTOTP(request.POST)
+        if form.is_valid():
+            if two_factor.verify_pending(request, user, form.cleaned_data["token"]):
+                return redirect(settings.LOGIN_REDIRECT_URL)
+            if two_factor.get_pending_user(request) is None:
+                messages.error(request, TOTP_LOCKED_MESSAGE)
+                return redirect("login")
+            error = "認証コードが一致しません"
+    else:
+        form = AuthTOTP()
+    return render(request, "login_totp.html", {"form": form, "error": error})
 
 
 @login_required

@@ -500,7 +500,10 @@ class TOTPDeviceManager(models.Manager):
     def check_totp(self, user=None, code=""):
         if not user:
             raise ValueError("user_id is not found......")
-        totp_array = self.filter(user=user)
+        if not code:
+            return False
+        # 無効化されたデバイスのコードでは通さない
+        totp_array = self.filter(user=user, is_active=True)
         verify_code = False
         for totp_array_one in totp_array:
             totp = pyotp.TOTP(totp_array_one.secret)

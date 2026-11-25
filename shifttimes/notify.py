@@ -3,6 +3,13 @@ from slack_sdk import WebhookClient
 
 from shifttimes.utils import get_admin_history_url, get_admin_url
 
+# Slack に流してはいけないフィールド（パスワードハッシュや TOTP の共有鍵など）
+SENSITIVE_FIELD_NAMES = frozenset({"password", "secret"})
+
+
+def _notifiable_fields(instance):
+    return [field for field in instance._meta.fields if field.name not in SENSITIVE_FIELD_NAMES]
+
 
 def _get_webhook_client():
     webhook_url = getattr(settings, "SLACK_WEBHOOK_URL_LOG", "")
@@ -36,7 +43,7 @@ def notify_insert_db(model_name: str, instance):
         return
 
     field_details = []
-    for field in instance._meta.fields:
+    for field in _notifiable_fields(instance):
         field_name = field.verbose_name
         field_value = getattr(instance, field.name)
         field_details.append(f"{field_name}: {field_value}")
@@ -75,7 +82,7 @@ def notify_update_db(model_name: str, instance):
     changes = []
 
     # フィールドごとの差分を確認
-    for field in instance._meta.fields:
+    for field in _notifiable_fields(instance):
         field_name = field.name
         old_value = getattr(previous, field_name, None)
         new_value = getattr(latest, field_name, None)

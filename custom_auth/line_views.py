@@ -12,14 +12,13 @@ import secrets
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import login as user_login
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from custom_auth import line
+from custom_auth import line, two_factor
 from custom_auth.models import LineAccount
 
 PURPOSE_LOGIN = "login"
@@ -116,8 +115,10 @@ def _complete_login(request, profile):
     account.updated_at = timezone.now()
     account.save()
 
-    user_login(request, account.user, backend=AUTH_BACKEND)
-    return redirect(settings.LOGIN_REDIRECT_URL)
+    # LINE ログインでも 2 段階認証は省略させない（パスワードと同じく TOTP 画面を挟む）
+    if two_factor.login_or_start_totp(request, account.user, backend=AUTH_BACKEND):
+        return redirect(settings.LOGIN_REDIRECT_URL)
+    return redirect("login_totp")
 
 
 def _complete_link(request, profile):
