@@ -199,8 +199,8 @@ uv run ruff check .
 ## デプロイ
 
 `Dockerfile` は nginx + gunicorn の構成でイメージを作ります。
-`master` への push と `v*` タグで GitHub Actions がイメージを Docker Hub
-（`yoneyan/shifttimes`）へ push します。
+公開イメージは `v*` タグの push 時に GitHub Container Registry
+（`ghcr.io/yoneyan/shifttimes`）へ push します（下記「リリース」）。
 
 ```bash
 docker build -t shifttimes .
