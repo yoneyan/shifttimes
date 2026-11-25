@@ -301,12 +301,6 @@ wheels = [
 ]
 
 [[package]]
-name = "django-qrcode"
-version = "0.3"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/8b/2f/4263fba93ae6a46776d6a8359ff1e192f38dffcc6f2925d29463375254fa/django-qrcode-0.3.tar.gz", hash = "sha256:88598af03087859c30b83ecd345dd3e988d739f13543e0bef9274eda18d55e0c", size = 4188, upload-time = "2011-12-13T10:03:08.524Z" }
-
-[[package]]
 name = "django-simple-history"
 version = "3.13.0"
 source = { registry = "https://pypi.org/simple" }
@@ -505,7 +499,6 @@ dependencies = [
     { name = "django-configurations" },
     { name = "django-debug-toolbar" },
     { name = "django-mathfilters" },
-    { name = "django-qrcode" },
     { name = "django-simple-history" },
     { name = "django-widget-tweaks" },
     { name = "pyotp" },
@@ -529,7 +522,6 @@ requires-dist = [
     { name = "django-configurations" },
     { name = "django-debug-toolbar" },
     { name = "django-mathfilters" },
-    { name = "django-qrcode" },
     { name = "django-simple-history" },
     { name = "django-widget-tweaks" },
     { name = "pyotp" },

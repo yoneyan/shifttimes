@@ -8,7 +8,6 @@ dependencies = [
     "django-configurations",
     "django-debug-toolbar",
     "django-mathfilters",
-    "django-qrcode",
     "django-simple-history",
     "django-widget-tweaks",
     "pyotp",
