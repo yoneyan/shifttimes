@@ -48,17 +48,20 @@ def password_change(request):
 
 @login_required
 def change_email(request):
-    form = EmailChangeForm(data=request.POST or None)
+    form = EmailChangeForm(data=request.POST or None, user=request.user)
     if request.method == "POST":
         if form.is_valid():
-            form.save(user=request.user)
-            return render(request, "done.html", {"text": "メールアドレスの変更を行いました"})
+            try:
+                form.save(user=request.user)
+                return render(request, "done.html", {"text": "メールアドレスの変更を行いました"})
+            except ValueError as err:
+                form.add_error(None, str(err))
     return render(request, "user/change_email.html", {"form": form})
 
 
 @login_required
 def edit_profile(request):
-    form = ProfileEditForm(data=request.POST or None)
+    form = ProfileEditForm(data=request.POST or None, user=request.user)
     userdata = {
         "username": request.user.username,
         "username_jp": request.user.username_jp,
@@ -66,10 +69,13 @@ def edit_profile(request):
     }
     if request.method == "POST":
         if form.is_valid():
-            form.save(user=request.user)
-            return render(request, "done.html", {"text": "プロフィールの変更を行いました"})
+            try:
+                form.save(user=request.user)
+                return render(request, "done.html", {"text": "プロフィールの変更を行いました"})
+            except ValueError as err:
+                form.add_error(None, str(err))
     else:
-        form = ProfileEditForm(initial=userdata)
+        form = ProfileEditForm(initial=userdata, user=request.user)
 
     return render(request, "user/edit_profile.html", {"form": form})
 

@@ -24,7 +24,6 @@ class GroupManager(models.Manager):
         self, name, name_jp, postcode, address, address_jp, phone,
         country="Japan", contract_type="E-Mail", **extra_fields
     ):
-        extra_fields.setdefault("is_pass", False)
         return self.create(
             name=name,
             name_jp=name_jp,
@@ -277,19 +276,30 @@ class UserManager(BaseUserManager):
 
         user.save()
 
-    def update_user(self, user=None, name="", name_jp="", display_name=""):
+    def update_user(self, user=None, username="", username_jp="", display_name=""):
         if not user:
             raise ValueError("user_id is not found......")
-        if not name:
-            raise ValueError("name is not found......")
-        if not name_jp:
-            raise ValueError("name_jp is not found......")
+        if not username:
+            raise ValueError("username is not found......")
+        if not username_jp:
+            raise ValueError("username_jp is not found......")
         if not display_name:
             raise ValueError("display_name is not found......")
-        user.name = name
-        user.name_jp = name_jp
+        fields = ["username", "username_jp", "display_name"]
+        previous = {field: getattr(user, field) for field in fields}
+        user.username = self.model.normalize_username(username)
+        user.username_jp = username_jp
         user.display_name = display_name
-        user.save()
+        try:
+            # 一意制約違反(IntegrityError)時に外側のトランザクションを壊さないよう
+            # セーブポイント内で保存する
+            with transaction.atomic():
+                user.save(update_fields=fields)
+        except Exception:
+            # 保存に失敗した値がメモリ上の user(request.user)に残らないよう戻す
+            for field, value in previous.items():
+                setattr(user, field, value)
+            raise
 
 
 class User(AbstractBaseUser):

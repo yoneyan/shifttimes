@@ -5,9 +5,14 @@ from custom_auth.models import Group, User, UserGroup
 
 
 class GroupAddForm(forms.Form):
-    agree = forms.ChoiceField(
+    # POST 値は文字列なので、"True" のときだけ True に変換する。
+    # ChoiceField のままだと "False" も truthy な文字列として扱われ、同意しなくても通ってしまう
+    agree = forms.TypedChoiceField(
         label="利用規約への同意", required=True,
-        choices=((False, "同意しない"), (True, "同意する"))
+        choices=(("False", "同意しない"), ("True", "同意する")),
+        coerce=lambda value: value == "True",
+        empty_value=False,
+        initial="False",
     )
     name_jp = forms.CharField(label="グループ名", max_length=150, required=True)
     name = forms.CharField(label="グループ名(English)", max_length=150, required=True)
@@ -23,10 +28,11 @@ class GroupAddForm(forms.Form):
             field.widget.attrs["class"] = "form-control"
             field.widget.attrs["placeholder"] = field.label
 
-    def clean(self):
+    def clean_agree(self):
         agree = self.cleaned_data.get("agree")
-        if not agree:
+        if agree is not True:
             raise forms.ValidationError("規約に同意されていません")
+        return agree
 
     def create_group(self, user_id):
         try:
@@ -156,12 +162,22 @@ class MyPasswordChangeForm(PasswordChangeForm):
 class EmailChangeForm(forms.Form):
     email = forms.EmailField(label="メールアドレス", max_length=100, required=True)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
+        self.user = user
         super().__init__(*args, **kwargs)
 
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-control"
             field.widget.attrs["placeholder"] = field.label
+
+    def clean_email(self):
+        email = self.cleaned_data["email"]
+        others = User.objects.filter(email=email)
+        if self.user is not None:
+            others = others.exclude(pk=self.user.pk)
+        if others.exists():
+            raise forms.ValidationError("このメールアドレスは既に使用されています")
+        return email
 
     def save(self, user):
         try:
@@ -175,23 +191,41 @@ class ProfileEditForm(forms.Form):
     username_jp = forms.CharField(label="名前(japanese)", max_length=100, required=True)
     display_name = forms.CharField(label="display_name", max_length=150, required=True)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
+        self.user = user
         super().__init__(*args, **kwargs)
 
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-control"
             field.widget.attrs["placeholder"] = field.label
 
+    def _check_unique(self, field_name, value):
+        others = User.objects.filter(**{field_name: value})
+        if self.user is not None:
+            others = others.exclude(pk=self.user.pk)
+        if others.exists():
+            raise forms.ValidationError("この名前は既に使用されています")
+
+    def clean_username(self):
+        username = User.normalize_username(self.cleaned_data["username"])
+        self._check_unique("username", username)
+        return username
+
+    def clean_username_jp(self):
+        username_jp = self.cleaned_data["username_jp"]
+        self._check_unique("username_jp", username_jp)
+        return username_jp
+
     def save(self, user):
         try:
             User.objects.update_user(
                 user=user,
-                name=self.cleaned_data["username"],
-                name_jp=self.cleaned_data["username_jp"],
+                username=self.cleaned_data["username"],
+                username_jp=self.cleaned_data["username_jp"],
                 display_name=self.cleaned_data["display_name"],
             )
         except Exception as e:
-            raise ValueError("更新に失敗しました") from e
+            raise ValueError("更新に失敗しました(名前が既に使用されている可能性があります)") from e
 
 
 class LoginForm(AuthenticationForm):
