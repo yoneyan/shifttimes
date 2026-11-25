@@ -309,8 +309,19 @@ Webhook URL は `getattr(settings, "SLACK_WEBHOOK_URL_LOG", "")` で読むため
 uv run python manage.py test
 ```
 
-`custom_auth/tests.py` と `shift/tests.py` にあります。
+各アプリの `tests.py` と `test_*.py` にあります。
 外部 API は `unittest.mock` で差し替えるため、ネットワークには依存しません。
+カバレッジの計測方法とテストを書くときの決まりは README の「テスト」を参照してください。
+
+| ファイル | 対象 |
+|---|---|
+| `custom_auth/tests.py` | グループのメンバー・権限、プランと人数上限、Stripe 課金、LINE ログイン |
+| `custom_auth/test_account_views.py` | ログイン、アカウント有効化、プロフィール、2 段階認証、グループの作成・編集 |
+| `shift/tests.py` | シフト希望・確定、時間帯設定、勤怠、CSV 出力、Slack 通知とリマインダー |
+| `notice/tests.py` | お知らせ管理 |
+| `shifttimes/tests.py` | トップページ、オンプレミスモード |
+| `shifttimes/test_notify.py` | 運営向け Slack 通知 |
+| `shifttimes/test_admin.py` | 管理画面の全モデルの表示確認（スモークテスト） |
 
 ## Lint
 

@@ -21,3 +21,8 @@ venv
 # エディタ・OS
 .idea/*
 .DS_Store
+
+# テストカバレッジ
+.coverage
+.coverage.*
+htmlcov/

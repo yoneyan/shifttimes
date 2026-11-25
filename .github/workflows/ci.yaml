@@ -38,11 +38,35 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      - name: Run system checks
+        # 警告も含めて失敗扱いにする（設定ミスやモデル定義の問題を早めに検出する）
+        run: uv run --frozen python manage.py check --fail-level WARNING
+
       - name: Check for missing migrations
         run: uv run --frozen python manage.py makemigrations --check --dry-run
 
       - name: Run tests
-        run: uv run --frozen python manage.py test --verbosity 2
+        # --shuffle でテストの実行順を毎回変え、テスト間の依存を検出する。
+        # 失敗時はログの "Used shuffle seed" を --shuffle <seed> に渡すと同じ順序で再現できる
+        run: uv run --frozen coverage run manage.py test --shuffle --verbosity 2
+
+      - name: Coverage report
+        # pyproject.toml の fail_under を下回るとこのステップが失敗する
+        run: |
+          uv run --frozen coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY" || true
+          uv run --frozen coverage report
+
+      - name: Generate HTML coverage report
+        if: ${{ !cancelled() }}
+        run: uv run --frozen coverage html
+
+      - name: Upload HTML coverage report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-html
+          path: htmlcov/
+          retention-days: 14
 
   lint:
     name: Lint (ruff)

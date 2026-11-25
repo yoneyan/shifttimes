@@ -18,6 +18,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "coverage>=7.17",
     "ruff>=0.16.2",
 ]
 # 本番コンテナでのみ必要な WSGI/ASGI サーバ（Dockerfile から --group prod で導入）
@@ -64,3 +65,31 @@ convention = "google"
 
 [tool.ruff.lint.mccabe]
 max-complexity = 20
+
+[tool.coverage.run]
+source = ["."]
+branch = true
+omit = [
+    ".venv/*",
+    "*/migrations/*",
+    "*/tests.py",
+    "*/test_*.py",
+    "manage.py",
+    "shifttimes/asgi.py",
+    "shifttimes/wsgi.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+skip_empty = true
+# この値を下回ると coverage report が失敗する（CI でカバレッジの後退を検出する）。
+# テストを追加してカバレッジが上がったら、それに合わせて引き上げる
+fail_under = 85
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"

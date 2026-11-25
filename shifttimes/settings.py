@@ -131,6 +131,9 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# manage.py test で使うテストランナー（テスト中だけパスワードハッシュを高速化する）
+TEST_RUNNER = "shifttimes.testing.TestRunner"
+
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 

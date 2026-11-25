@@ -112,6 +112,30 @@ cron の例（毎朝 9 時）:
 uv run python manage.py test
 ```
 
+特定のアプリやテストクラスだけを実行することもできます。
+
+```bash
+uv run python manage.py test custom_auth.test_account_views.LoginViewTests
+```
+
+カバレッジは coverage.py で計測します（設定は `pyproject.toml` の `[tool.coverage.*]`）。
+
+```bash
+uv run coverage run manage.py test
+uv run coverage report
+uv run coverage html  # htmlcov/index.html に行単位のレポートを出力
+```
+
+`coverage report` はカバレッジが `fail_under` を下回ると失敗します。テストを追加して
+カバレッジが上がったら `fail_under` も引き上げてください。
+
+テストを書くときの決まりは次のとおりです。
+
+- テストは各アプリの `tests.py` か `test_*.py` に置く（`manage.py test` が自動で見つける）
+- Stripe・LINE・Slack などの外部 API は `unittest.mock` で差し替え、ネットワークに依存させない
+- 送信メールは `django.core.mail.outbox` で確認する（テスト中は実際には送られない）
+- テスト中はパスワードハッシュを高速なものに切り替えている（`shifttimes/testing.py`）
+
 Lint は ruff で行います。
 
 ```bash
@@ -123,7 +147,11 @@ uv run ruff check .
 `.github/workflows/ci.yaml` が `master` / `develop` への push と Pull Request で
 次を実行します。
 
-- `manage.py makemigrations --check`（マイグレーションの作り忘れ検出）と `manage.py test`
+- `manage.py check --fail-level WARNING`（システムチェック。警告も失敗扱い）
+- `manage.py makemigrations --check`（マイグレーションの作り忘れ検出）
+- `manage.py test --shuffle`（実行順を毎回変えてテスト間の依存を検出）とカバレッジ計測。
+  カバレッジはジョブのサマリーに表示され、HTML レポートは Artifacts の `coverage-html` から取得できる。
+  `fail_under` を下回ると失敗する
 - `ruff check`
 - Docker イメージのビルド確認（push はしない）
 
