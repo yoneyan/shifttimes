@@ -24,7 +24,6 @@ class GroupManager(models.Manager):
         self, name, name_jp, postcode, address, address_jp, phone,
         country="Japan", contract_type="E-Mail", **extra_fields
     ):
-        extra_fields.setdefault("is_pass", False)
         return self.create(
             name=name,
             name_jp=name_jp,
