@@ -35,7 +35,6 @@ from shift.models import (
     minutes_to_hhmm,
 )
 from shift.views import (
-    _active_groups,
     _add_month,
     _admin_group_landing,
     _date_range,
@@ -217,10 +216,8 @@ def _save_attendance_record(request, group, user, redirect_url):
 @login_required
 def attendance_index(request):
     """勤怠管理が有効な所属グループの一覧"""
-    if request.user.is_staff:
-        groups = list(_active_groups())
-    else:
-        groups = [membership.group for membership in _user_memberships(request.user)]
+    # スタッフでも、勤怠を入力できるのは所属しているグループだけ
+    groups = [membership.group for membership in _user_memberships(request.user)]
 
     enabled_ids = _enabled_group_ids(groups)
     enabled_groups = [group for group in groups if group.id in enabled_ids]
@@ -268,7 +265,7 @@ def _default_work_type_id(group, user, work_types):
 @login_required
 def attendance(request, group_id):
     """自分の勤怠を月ごとの一覧表で入力・確認する"""
-    group = _get_group_for_user(request, group_id)
+    group = _get_group_for_user(request, group_id, require_member=True)
     setting = _attendance_setting(group)
     if not setting.is_enabled:
         messages.info(request, "このグループでは勤怠管理が有効になっていません。")
@@ -380,7 +377,7 @@ def _clock_work_type(group, value):
 @login_required
 def attendance_clock(request, group_id):
     """出勤ボタン・退勤ボタンによる打刻"""
-    group = _get_group_for_user(request, group_id)
+    group = _get_group_for_user(request, group_id, require_member=True)
     setting = _attendance_setting(group)
     redirect_url = reverse("shift:attendance", args=[group.id])
 

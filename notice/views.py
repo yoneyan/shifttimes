@@ -22,11 +22,12 @@ def index(request):
             if not ug.group.stripe_subscription_id
         ]
 
-    # 未確定（下書き）シフト希望があるグループ
+    # 未確定（下書き）シフト希望があるグループ。確定画面に入れるのは所属グループだけ
     today = timezone.now().date()
     draft_entries = (
         ShiftEntry.objects.filter(
             user=request.user,
+            group__usergroup__user=request.user,
             work_date__gte=today,
             is_draft=True,
         )

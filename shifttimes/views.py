@@ -28,7 +28,7 @@ def index(request):
     ]
 
     total_draft_count = ShiftEntry.objects.filter(
-        user=user, work_date__gte=today, is_draft=True,
+        user=user, group__usergroup__user=user, work_date__gte=today, is_draft=True,
     ).count()
 
     context = {

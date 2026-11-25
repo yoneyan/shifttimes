@@ -71,9 +71,13 @@ def _admin_groups_for_user(user):
     ]
 
 
-def _get_group_for_user(request, group_id, require_admin=False):
+def _get_group_for_user(request, group_id, require_admin=False, require_member=False):
+    """require_member は自分のシフト希望・勤怠を入力する画面向け。
+
+    提出状況や勤怠集計は所属メンバーしか集計しないので、スタッフでも所属していないグループでは入力させない。
+    """
     group = get_object_or_404(Group, id=group_id, status=ACTIVE_GROUP_STATUS)
-    if request.user.is_staff:
+    if request.user.is_staff and not require_member:
         return group
 
     membership = UserGroup.objects.filter(user=request.user, group=group).first()
@@ -313,11 +317,10 @@ def index(request):
     memberships = list(_user_memberships(request.user))
     admin_group_ids = {membership.group_id for membership in memberships if membership.is_admin}
 
+    # スタッフでも、シフト希望を入力できるのは所属しているグループだけ
+    groups = [membership.group for membership in memberships]
     if request.user.is_staff:
-        groups = list(_active_groups())
         admin_group_ids = {group.id for group in groups}
-    else:
-        groups = [membership.group for membership in memberships]
 
     draft_counts = {}
     for group in groups:
@@ -365,7 +368,7 @@ _SHIFT_STATUS_SYMBOLS = {
 @login_required
 def shift_calendar(request, group_id):
     """自分のシフト希望を月カレンダーで表示する"""
-    group = _get_group_for_user(request, group_id)
+    group = _get_group_for_user(request, group_id, require_member=True)
     today = _today()
     current_month = _month_from_value(request.GET.get("month", ""), today)
     month_from, month_to = _month_bounds(current_month)
@@ -592,7 +595,7 @@ def _save_entry_table(request, group, open_period, time_slots):
 @login_required
 def entry_table(request, group_id):
     """月ごとの一覧表。日付をタップしてその日（または曜日一括）の希望をまとめて登録する"""
-    group = _get_group_for_user(request, group_id)
+    group = _get_group_for_user(request, group_id, require_member=True)
     open_period = _shift_entry_period(group)
     time_slots = _active_time_slots(group)
 
@@ -677,7 +680,7 @@ def entry_table(request, group_id):
 @login_required
 def shift_confirm(request, group_id):
     """ログイン中のユーザ自身の下書きシフト希望を一括確定する（他メンバーのぶんは対象外）"""
-    group = _get_group_for_user(request, group_id)
+    group = _get_group_for_user(request, group_id, require_member=True)
     today = _today()
 
     if request.method == "POST":

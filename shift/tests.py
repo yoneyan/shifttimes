@@ -72,6 +72,86 @@ class ShiftViewTests(TestCase):
         self.assertEqual(allowed.status_code, 200)
         self.assertEqual(forbidden.status_code, 403)
 
+    def _create_staff_user(self):
+        return get_user_model().objects.create(
+            username="staff",
+            username_jp="スタッフ",
+            email="staff@example.com",
+            is_active=True,
+            is_staff=True,
+        )
+
+    def test_staff_cannot_enter_shift_in_group_without_membership(self):
+        # 提出状況は所属メンバーしか集計しないので、非所属のスタッフが入力すると誰にも見えなくなる
+        staff = self._create_staff_user()
+        self.client.force_login(staff)
+
+        entry_table = self.client.get(reverse("shift:entry_table", args=[self.group.id]))
+        entry_post = self.client.post(
+            reverse("shift:entry_table", args=[self.group.id]),
+            {
+                "work_date": "2026-06-10",
+                "month": "2026-06",
+                "status_%d" % self.time_slot.id: ShiftEntry.AVAILABLE,
+            },
+        )
+        calendar = self.client.get(reverse("shift:shift_calendar", args=[self.group.id]))
+        confirm = self.client.post(
+            reverse("shift:shift_confirm", args=[self.group.id]),
+            {"date_from": "2026-06-01", "date_to": "2026-06-30"},
+        )
+
+        self.assertEqual(entry_table.status_code, 403)
+        self.assertEqual(entry_post.status_code, 403)
+        self.assertEqual(calendar.status_code, 403)
+        self.assertEqual(confirm.status_code, 403)
+        self.assertFalse(ShiftEntry.objects.filter(user=staff).exists())
+
+    def test_staff_can_enter_shift_in_group_with_membership(self):
+        staff = self._create_staff_user()
+        UserGroup.objects.create(user=staff, group=self.group)
+        self.client.force_login(staff)
+
+        response = self.client.get(reverse("shift:entry_table", args=[self.group.id]))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_staff_can_still_view_summary_of_group_without_membership(self):
+        staff = self._create_staff_user()
+        self.client.force_login(staff)
+
+        response = self.client.get(reverse("shift:summary", args=[self.group.id]))
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_index_for_staff_lists_only_member_groups(self):
+        staff = self._create_staff_user()
+        UserGroup.objects.create(user=staff, group=self.other_group)
+        self.client.force_login(staff)
+
+        response = self.client.get(reverse("shift:index"))
+
+        self.assertContains(response, reverse("shift:entry_table", args=[self.other_group.id]))
+        self.assertNotContains(response, reverse("shift:entry_table", args=[self.group.id]))
+
+    def test_draft_alerts_skip_groups_without_membership(self):
+        # 所属を外れたグループの下書きは確定画面に入れないので、お知らせやトップに出さない
+        ShiftEntry.objects.create(
+            group=self.other_group,
+            user=self.user,
+            work_date=timezone.now().date() + timedelta(days=1),
+            time_slot=self.time_slot,
+            status=ShiftEntry.AVAILABLE,
+            is_draft=True,
+        )
+        self.client.force_login(self.user)
+
+        notice_page = self.client.get(reverse("notice:index"))
+        top_page = self.client.get(reverse("index"))
+
+        self.assertNotContains(notice_page, reverse("shift:shift_confirm", args=[self.other_group.id]))
+        self.assertEqual(top_page.context["total_draft_count"], 0)
+
     def test_index_lists_accessible_group(self):
         self.client.force_login(self.user)
 
@@ -895,6 +975,24 @@ class AttendanceTests(TestCase):
         response = self.client.get(reverse("shift:attendance", args=[self.other_group.id]))
 
         self.assertEqual(response.status_code, 403)
+
+    def test_staff_cannot_record_attendance_in_group_without_membership(self):
+        # 勤怠集計は所属メンバーしか集計しないので、非所属のスタッフには入力させない
+        staff = get_user_model().objects.create(
+            username="staff", username_jp="スタッフ", email="staff@example.com",
+            is_active=True, is_staff=True,
+        )
+        self.client.force_login(staff)
+
+        page = self.client.get(self._attendance_url())
+        clock = self.client.post(reverse("shift:attendance_clock", args=[self.group.id]), {"action": "in"})
+        index = self.client.get(reverse("shift:attendance_index"))
+
+        self.assertEqual(page.status_code, 403)
+        self.assertEqual(clock.status_code, 403)
+        self.assertFalse(AttendanceRecord.objects.filter(user=staff).exists())
+        self.assertNotContains(index, self._attendance_url())
+        self.assertFalse(index.context["has_attendance_groups"])
 
     def test_attendance_nav_link_appears_only_while_enabled(self):
         self.client.force_login(self.user)

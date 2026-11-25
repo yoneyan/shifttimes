@@ -37,8 +37,9 @@ def attendance_groups(request):
     if not user.is_authenticated:
         return {"has_attendance_groups": False}
 
-    settings_query = AttendanceSetting.objects.filter(is_enabled=True, group__status=ACTIVE_GROUP_STATUS)
-    if not user.is_staff:
-        settings_query = settings_query.filter(group__usergroup__user=user)
+    # スタッフでも、勤怠を入力できるのは所属しているグループだけ
+    settings_query = AttendanceSetting.objects.filter(
+        is_enabled=True, group__status=ACTIVE_GROUP_STATUS, group__usergroup__user=user,
+    )
 
     return {"has_attendance_groups": settings_query.exists()}
