@@ -1,0 +1,42 @@
+name: Dependency audit
+
+# uv.lock に固定した依存ライブラリに既知の脆弱性がないかを pip-audit (PyPI Advisory / OSV) で検査する。
+# 依存を変えていなくても新しい脆弱性が公開されることがあるため、定期実行もする
+on:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+  schedule:
+    # 毎週月曜 9:17 (JST)
+    - cron: "17 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pip-audit:
+    name: pip-audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        # setup-uv はメジャーバージョンだけのタグ（v10 など）を提供していないため完全なバージョンで固定する
+        uses: astral-sh/setup-uv@v10.4.0
+
+      - name: Export locked requirements
+        # 本番（prod）・開発（dev）を含むすべての依存グループをハッシュつきで書き出す
+        run: uv export --locked --all-groups --no-emit-project --output-file "${RUNNER_TEMP}/requirements.txt"
+
+      - name: Run pip-audit
+        run: |
+          uvx pip-audit --strict --disable-pip --require-hashes \
+            --requirement "${RUNNER_TEMP}/requirements.txt"

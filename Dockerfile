@@ -10,7 +10,6 @@ RUN apt-get update && \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-RUN mkdir /opt/app
 WORKDIR /opt/app
 
 ENV PYTHONPATH=/opt/app/
@@ -20,24 +19,24 @@ ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 ENV PATH="/opt/venv/bin:$PATH"
 
-ADD pyproject.toml /opt/app/pyproject.toml
-ADD uv.lock /opt/app/uv.lock
-ADD .python-version /opt/app/.python-version
+COPY pyproject.toml /opt/app/pyproject.toml
+COPY uv.lock /opt/app/uv.lock
+COPY .python-version /opt/app/.python-version
 RUN uv sync --locked --no-dev --group prod
 
-ADD manage.py /opt/app/
-ADD shifttimes/ /opt/app/shifttimes/
-ADD custom_auth/ /opt/app/custom_auth/
-ADD notice/ /opt/app/notice/
-ADD shift/ /opt/app/shift/
+COPY manage.py /opt/app/
+COPY shifttimes/ /opt/app/shifttimes/
+COPY custom_auth/ /opt/app/custom_auth/
+COPY notice/ /opt/app/notice/
+COPY shift/ /opt/app/shift/
 
 # NGINX
-RUN python manage.py collectstatic --noinput
-RUN ln -s /opt/app/static /var/www/html/static
-ADD files/default.conf /etc/nginx/sites-enabled/default
+RUN python manage.py collectstatic --noinput && \
+    ln -s /opt/app/static /var/www/html/static
+COPY files/default.conf /etc/nginx/sites-enabled/default
 
 #EXPOSE 80
 EXPOSE 8010
 
-ADD files/entrypoint.sh /opt/app/
+COPY files/entrypoint.sh /opt/app/
 CMD ["bash", "-xe", "/opt/app/entrypoint.sh"]

@@ -38,6 +38,26 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      - name: Run Django system checks
+        run: uv run --frozen python manage.py check --fail-level WARNING
+
+      - name: Run Django deployment checks
+        # HTTPS で公開する本番相当の環境変数で check --deploy を実行し、設定の抜けを検出する
+        env:
+          DEBUG: "false"
+          ALLOWED_HOSTS: shifttimes.example.com
+          CSRF_TRUSTED_ORIGINS: https://shifttimes.example.com
+          SECURE_SSL_REDIRECT: "true"
+          SECURE_PROXY_SSL_HEADER: "true"
+          SESSION_COOKIE_SECURE: "true"
+          CSRF_COOKIE_SECURE: "true"
+          SECURE_HSTS_SECONDS: "31536000"
+        run: |
+          # 既定の SECRET_KEY は django-insecure- 始まりで警告になるため、使い捨ての値を生成して渡す
+          SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(64))')"
+          export SECRET_KEY
+          uv run --frozen python manage.py check --deploy --fail-level WARNING
+
       - name: Check for missing migrations
         run: uv run --frozen python manage.py makemigrations --check --dry-run
 
@@ -60,8 +80,31 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
-      - name: Run ruff
+      - name: Run ruff check
         run: uv run --frozen ruff check --output-format=github .
+
+      - name: Run ruff format
+        run: uv run --frozen ruff format --check --diff .
+
+  lint-config:
+    name: Lint (workflows / Dockerfile)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v7
+
+      - name: Run actionlint
+        # イメージには shellcheck が同梱されており、run: のシェルスクリプトも検査される
+        run: |
+          docker run --rm -v "${GITHUB_WORKSPACE}:/repo" --workdir /repo \
+            rhysd/actionlint:1.7.12 -color
+
+      - name: Run hadolint
+        uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: Dockerfile
+          config: .hadolint.yaml
+          failure-threshold: warning
 
   docker-build:
     name: Docker build check
