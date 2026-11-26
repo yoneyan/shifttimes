@@ -9,6 +9,12 @@ urlpatterns = [
     path("<int:group_id>/", views.list_group, name="list"),
     path("add/", views.add_group, name="add"),
     path("<int:group_id>/members/", views.group_members, name="members"),
+    path(
+        "<int:group_id>/members/<int:membership_id>/remove/",
+        views.remove_member,
+        name="remove_member",
+    ),
+    path("<int:group_id>/leave/", views.leave_group, name="leave"),
     path("<int:group_id>/edit", views.edit_group, name="edit"),
     path("<int:group_id>/permission", views.group_permission, name="permission"),
     path("<int:group_id>/admin/", views.group_admin_home, name="admin_home"),

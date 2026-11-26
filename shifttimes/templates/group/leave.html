@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}グループから脱退 | {% endblock %}
+{% block page_title %}グループから脱退{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }} / {{ group.name }}</p>
+{% endblock %}
+{% block content %}
+  {% if error %}
+    <div class="alert alert-danger py-2" role="alert">{{ error }}</div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-body">
+      {% if can_leave %}
+        <p class="mb-2"><span class="fw-bold">{{ group.name_jp }}</span> から脱退します。</p>
+        <ul class="small text-muted mb-3">
+          <li>このグループのシフト希望・勤怠は入力できなくなります。</li>
+          <li>アカウント自体は削除されず、他のグループはそのまま使えます。</li>
+          <li>もう一度参加するには、グループ管理者に登録し直してもらう必要があります。</li>
+        </ul>
+        <form method="post" class="d-flex flex-wrap gap-2">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-box-arrow-right me-1"></i>脱退する
+          </button>
+          <a class="btn btn-outline-secondary" href="{% url 'custom_auth_group:members' group.id %}">キャンセル</a>
+        </form>
+      {% else %}
+        <p class="mb-3">
+          あなたはこのグループの唯一の管理者のため、脱退できません。
+          先に権限設定で他のメンバーを管理者にしてください。
+        </p>
+        <div class="d-flex flex-wrap gap-2">
+          <a class="btn btn-primary" href="{% url 'custom_auth_group:permission' group.id %}">
+            <i class="bi bi-shield-lock me-1"></i>権限設定へ
+          </a>
+          <a class="btn btn-outline-secondary" href="{% url 'custom_auth_group:members' group.id %}">戻る</a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endblock content %}

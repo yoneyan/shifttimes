@@ -14,6 +14,7 @@ from collections import defaultdict
 from datetime import timedelta
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count
@@ -619,9 +620,13 @@ def _breakdown_table(member_rows):
     }
 
 
-def _summary_members(group):
-    """勤怠集計の対象メンバー（有効なユーザーのみ、ユーザー名順）"""
-    return [
+def _summary_members(group, month_from, month_to):
+    """勤怠集計の対象メンバー（有効なユーザーをユーザー名順に並べ、その後に退会済みのメンバー）
+
+    グループから外れた人も、その月に勤怠が残っていれば給与計算から漏れないように含める。
+    退会済みの人には ``is_former_member`` を立てる。
+    """
+    members = [
         membership.user
         for membership in (
             UserGroup.objects.filter(group=group, user__is_active=True)
@@ -629,6 +634,19 @@ def _summary_members(group):
             .order_by("user__username")
         )
     ]
+    member_ids = {member.id for member in members}
+    former_ids = (
+        AttendanceRecord.objects.filter(group=group, work_date__gte=month_from, work_date__lte=month_to)
+        .exclude(user_id__in=member_ids)
+        .values_list("user_id", flat=True)
+        .distinct()
+    )
+    former_members = list(get_user_model().objects.filter(id__in=former_ids).order_by("username"))
+    for member in members:
+        member.is_former_member = False
+    for member in former_members:
+        member.is_former_member = True
+    return members + former_members
 
 
 @login_required
@@ -642,7 +660,7 @@ def attendance_summary(request, group_id):
     current_month = _month_from_value(month_value, today)
     month_from, month_to = _month_bounds(current_month)
 
-    members = _summary_members(group)
+    members = _summary_members(group, month_from, month_to)
 
     if request.method == "POST":
         redirect_url = "{}?month={}".format(
@@ -858,7 +876,7 @@ def attendance_summary_csv(request, group_id):
 
     current_month = _month_from_value(request.GET.get("month", ""), _today())
     month_from, month_to = _month_bounds(current_month)
-    members = _summary_members(group)
+    members = _summary_members(group, month_from, month_to)
     member_order = {member.id: index for index, member in enumerate(members)}
     records = sorted(
         AttendanceRecord.objects.filter(

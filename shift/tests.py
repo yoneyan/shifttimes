@@ -2022,6 +2022,31 @@ class AttendanceCsvTests(TestCase):
         content = response.content.decode("utf-8")
         return response, list(csv.reader(content.lstrip("\ufeff").splitlines()))
 
+    def test_former_member_records_are_kept_in_summary_and_csv(self):
+        self._create(self.user, self.month_first, time(9, 0), time(12, 0), self.lesson)
+        UserGroup.objects.filter(user=self.user, group=self.group).delete()
+        self.client.force_login(self.admin_user)
+
+        summary = self.client.get(
+            reverse("shift:attendance_summary", args=[self.group.id]),
+            {"month": self.month_first.strftime("%Y-%m")},
+        )
+        _, rows = self._download("members")
+
+        former = [row["member"] for row in summary.context["member_rows"] if row["member"].id == self.user.id]
+        self.assertEqual(len(former), 1)
+        self.assertTrue(former[0].is_former_member)
+        self.assertContains(summary, "退会済み")
+        self.assertIn("user", [row[0] for row in rows[1:]])
+
+    def test_former_member_without_records_is_not_listed(self):
+        UserGroup.objects.filter(user=self.user, group=self.group).delete()
+        self.client.force_login(self.admin_user)
+
+        _, rows = self._download("members")
+
+        self.assertNotIn("user", [row[0] for row in rows[1:]])
+
     def test_csv_requires_group_admin(self):
         self.client.force_login(self.user)
 
