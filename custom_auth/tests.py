@@ -5,6 +5,7 @@ import urllib.error
 import urllib.parse
 from unittest import mock, skipUnless
 
+import pyotp
 import stripe
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -13,7 +14,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from custom_auth import billing_views, line
-from custom_auth.models import Group, LineAccount, UserGroup
+from custom_auth.models import Group, LineAccount, TOTPDevice, UserGroup
 
 
 class GroupMemberViewTests(TestCase):
@@ -579,6 +580,48 @@ class BillingViewTests(TestCase):
                 )
                 self.assertTemplateUsed(response, "error.html")
 
+    def _checkout_session(self, customer="cus_123", group_id=None):
+        return {
+            "customer": customer,
+            "metadata": {"group_id": str(self.group.id if group_id is None else group_id), "plan": "pro1"},
+            "subscription": fake_subscription(price_id="price_pro1", customer=customer),
+        }
+
+    @mock.patch("stripe.checkout.Session.retrieve")
+    def test_billing_success_applies_own_checkout_session(self, retrieve):
+        self.group.stripe_customer_id = "cus_123"
+        self.group.save()
+        retrieve.return_value = self._checkout_session()
+        self.client.force_login(self.admin_user)
+
+        self.client.get(reverse("custom_auth_group:billing_success", args=[self.group.id]), {"session_id": "cs_1"})
+
+        self.group.refresh_from_db()
+        self.assertEqual(self.group.stripe_plan, "pro1")
+
+    @mock.patch("stripe.checkout.Session.retrieve")
+    def test_billing_success_ignores_another_groups_checkout_session(self, retrieve):
+        """他グループ(別顧客)の決済の session_id を渡しても、このグループの契約にはならない"""
+        other = Group.objects.create(name="other", name_jp="別店舗", stripe_customer_id="cus_other")
+        self.group.stripe_customer_id = "cus_123"
+        self.group.save()
+        self.client.force_login(self.admin_user)
+
+        for session in (
+            self._checkout_session(customer="cus_other", group_id=other.id),
+            self._checkout_session(customer="cus_other"),
+            self._checkout_session(group_id=other.id),
+        ):
+            with self.subTest(session=session["customer"]):
+                retrieve.return_value = session
+                self.client.get(
+                    reverse("custom_auth_group:billing_success", args=[self.group.id]), {"session_id": "cs_x"}
+                )
+
+                self.group.refresh_from_db()
+                self.assertEqual(self.group.stripe_plan, "")
+                self.assertIsNone(self.group.stripe_subscription_id)
+
 
 @override_settings(STRIPE_PLANS=TEST_PLANS, STRIPE_SECRET_KEY="sk_test_dummy", STRIPE_WEBHOOK_SECRET="whsec_test")
 @skipUnless(settings.BILLING_ENABLED, "ONPREMISE_MODE では課金機能が無効なため対象外")
@@ -912,6 +955,27 @@ class LineLoginViewTests(TestCase):
 
         self.assertContains(response, "連携済み")
         self.assertContains(response, "たろう")
+
+    @mock.patch("custom_auth.line.fetch_profile")
+    def test_line_login_requires_totp_code_when_device_registered(self, fetch_profile):
+        secret = pyotp.random_base32()
+        TOTPDevice.objects.create_secret(user=self.user, title="phone", otp_secret=secret)
+        LineAccount.objects.create(user=self.user, line_user_id="U0001")
+        fetch_profile.return_value = {"line_user_id": "U0001", "display_name": "", "picture_url": ""}
+        state = self._start("custom_auth_line:login")
+
+        response = self._callback(state)
+
+        self.assertRedirects(response, reverse("login_verify"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+        # コードの生成と照合で同じ時刻を使い、時間枠の切り替わりでテストが揺れないようにする
+        now = datetime.datetime(2026, 1, 15, 12, 0, 10)
+        with mock.patch("django.utils.timezone.now", return_value=now):
+            response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(secret).at(now)})
+
+            self.assertRedirects(response, "/", fetch_redirect_response=False)
+            self.assertEqual(self.client.session["_auth_user_id"], str(self.user.id))
 
 
 @override_settings(**LINE_SETTINGS)

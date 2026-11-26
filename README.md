@@ -294,7 +294,9 @@ docker pull ghcr.io/yoneyan/shifttimes:latest
 
 コンテナ起動時（`files/entrypoint.sh`）に未適用のマイグレーションがあれば自動で
 適用されます。`SKIP_SUPERUSER=false` を渡すと `SUPERUSER_NAME` /
-`SUPERUSER_EMAIL` / `SUPERUSER_PASSWORD` で管理ユーザを作成します。
+`SUPERUSER_EMAIL` / `SUPERUSER_PASSWORD` で管理ユーザを作成します
+（`SUPERUSER_PASSWORD` は必須で、既定のパスワードはありません）。
+`SECRET_KEY` が未設定のときは、公開済みの開発用キーで動かないようコンテナは起動を中止します。
 
 ## ドキュメント
 

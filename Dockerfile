@@ -33,10 +33,14 @@ COPY shift/ /opt/app/shift/
 # NGINX
 RUN python manage.py collectstatic --noinput && \
     ln -s /opt/app/static /var/www/html/static
+COPY files/nginx.conf /etc/nginx/nginx.conf
 COPY files/default.conf /etc/nginx/sites-enabled/default
+# 設定の誤りはイメージのビルド時点で検出する
+RUN nginx -t
 
 #EXPOSE 80
 EXPOSE 8010
 
 COPY files/entrypoint.sh /opt/app/
-CMD ["bash", "-xe", "/opt/app/entrypoint.sh"]
+# -x は SECRET_KEY などの値をログに出してしまうため付けない
+CMD ["bash", "-e", "/opt/app/entrypoint.sh"]

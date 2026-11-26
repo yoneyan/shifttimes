@@ -482,7 +482,7 @@ class TOTPDeviceManager(models.Manager):
     def check_max_totp_device(self, user=None):
         if not user:
             raise ValueError("user_id is not found......")
-        return self.filter(user=user).count() <= 5
+        return self.filter(user=user).count() < 5
 
     def generate_secret(self, email=""):
         otp_secret = pyotp.random_base32()
@@ -494,19 +494,38 @@ class TOTPDeviceManager(models.Manager):
     def create_secret(self, user=None, title="", otp_secret=""):
         if not user:
             raise ValueError("user_id is not found......")
-        self.create(title=title, user=user, secret=otp_secret, is_active=True)
+        # 二重送信などで同じシークレットのデバイスが複数できないようにする。
+        # (user, secret) の一意制約があるので、並行して送られても get_or_create が競合を吸収する
+        self.get_or_create(user=user, secret=otp_secret, defaults={"title": title, "is_active": True})
+
+    def active(self, user):
+        """ログインの認証に使えるデバイス（管理画面で無効化したものは除く）"""
+        return self.filter(user=user, is_active=True)
 
     def check_totp(self, user=None, code=""):
+        """有効なデバイスのいずれかでコードが一致すれば True
+
+        一度受け付けたコードは同じ時間枠の間も再利用させない（盗み見たコードでの再ログイン対策）。
+        使用済みの時間枠は条件付き UPDATE で記録するので、同時に送られても受け付けるのは 1 回だけ。
+        """
         if not user:
             raise ValueError("user_id is not found......")
-        totp_array = self.filter(user=user)
-        verify_code = False
-        for totp_array_one in totp_array:
-            totp = pyotp.TOTP(totp_array_one.secret)
-            verify_code = totp.verify(code)
-            if verify_code:
-                break
-        return verify_code
+        now = timezone.now()
+        for device in self.active(user):
+            totp = pyotp.TOTP(device.secret)
+            if not totp.verify(code, for_time=now):
+                continue
+            step = totp.timecode(now)
+            # 同じシークレットのデバイスが複数あっても、1 つの UPDATE でまとめて使用済みにする
+            # （1 件だけ記録すると、残りのデバイス経由で同じコードを再利用できてしまう）
+            consumed = (
+                self.filter(user=user, secret=device.secret)
+                .filter(models.Q(last_used_step__isnull=True) | models.Q(last_used_step__lt=step))
+                .update(last_used_step=step)
+            )
+            if consumed:
+                return True
+        return False
 
     def list(self, user=None):
         if not user:
@@ -525,15 +544,58 @@ class TOTPDevice(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     secret = models.CharField("secret", max_length=100)
     is_active = models.BooleanField("有効", default=False)
+    # 最後にログインで受け付けたコードの時間枠（30 秒単位）。同じコードの再利用を防ぐ
+    last_used_step = models.BigIntegerField("最終使用の時間枠", blank=True, null=True)
 
     objects = TOTPDeviceManager()
 
     class Meta:
         verbose_name = "TOTP Device"
         verbose_name_plural = "TOTP Device"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "secret"], name="totpdevice_unique_user_secret"),
+        ]
 
     def __str__(self):
         return "%d[%s]" % (self.id, self.user.username)
+
+
+class TwoFactorChallenge(models.Model):
+    """ログイン時の 2 要素認証の確認待ち
+
+    失敗回数をセッションではなく DB で数え、並列リクエストでも試行上限を超えさせない。
+    """
+
+    created_at = models.DateTimeField("作成日", default=timezone.now)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    attempts = models.PositiveIntegerField("認証コードの試行回数", default=0)
+
+    class Meta:
+        verbose_name = "2要素認証の確認待ち"
+        verbose_name_plural = "2要素認証の確認待ち"
+
+    def __str__(self):
+        return "%d[%s]" % (self.id, self.user.username)
+
+
+class TwoFactorThrottle(models.Model):
+    """ユーザ単位の認証コードの試行制限
+
+    確認待ち（``TwoFactorChallenge``）ごとの上限だけだと、パスワードを知っている攻撃者が
+    ログインし直したり並列にセッションを作ったりして試行枠を補充できる。ユーザごとに
+    一定時間内の失敗回数を数え、ログインし直してもリセットされない上限をかける。
+    """
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
+    failures = models.PositiveIntegerField("時間枠内の失敗回数", default=0)
+    window_started_at = models.DateTimeField("時間枠の開始", default=timezone.now)
+
+    class Meta:
+        verbose_name = "2要素認証の試行制限"
+        verbose_name_plural = "2要素認証の試行制限"
+
+    def __str__(self):
+        return "%s: %d" % (self.user.username, self.failures)
 
 
 class LineAccount(models.Model):

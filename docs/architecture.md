@@ -326,9 +326,6 @@ uv run ruff check .
 
 ## 注意が必要な箇所
 
-- `files/entrypoint.sh` の管理ユーザ作成は `django.contrib.auth.models.User` を
-  import していますが、このプロジェクトの `AUTH_USER_MODEL` は
-  `custom_auth.User` です。`SKIP_SUPERUSER=false` で動かすと失敗します
 - `__pycache__` 配下の `.pyc` がリポジトリに追跡されています。差分が読みにくく
   なるため、`.gitignore` への追加と `git rm --cached` での除去を推奨します
 - `shifttimes/models.py` の `MediumTextField` は `custom_auth/models.py` でも

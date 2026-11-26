@@ -1,14 +1,19 @@
+import datetime
 import importlib
 import os
 from contextlib import contextmanager
 from unittest import mock, skipUnless
 
+import pyotp
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 from django.urls import NoReverseMatch, clear_url_caches, reverse
 
-from custom_auth.models import Group, UserGroup
+from custom_auth import two_factor
+from custom_auth.models import Group, TOTPDevice, TwoFactorChallenge, TwoFactorThrottle, UserGroup
+from shifttimes import notify
 
 # ONPREMISE_MODE で settings.py が差し替える設定
 ONPREMISE_SETTING_NAMES = (
@@ -161,3 +166,290 @@ class OnpremiseBillingDisabledTests(TestCase):
         response = self.client.get(reverse("custom_auth_group:admin_home", args=[self.group.id]))
 
         self.assertContains(response, "請求管理")
+
+
+class TwoFactorLoginTests(TestCase):
+    """TOTP を登録したユーザはパスワードだけではログインできない"""
+
+    password = "correct-horse-battery"
+
+    def setUp(self):
+        self.user = get_user_model().objects.create(
+            username="totp-user",
+            username_jp="二要素",
+            email="totp@example.com",
+            is_active=True,
+        )
+        self.user.set_password(self.password)
+        self.user.save()
+        self.secret = pyotp.random_base32()
+        # コードの生成と照合で同じ時刻を使い、30 秒の時間枠の切り替わりでテストが揺れないようにする
+        self.now = datetime.datetime(2026, 1, 15, 12, 0, 10)
+        patcher = mock.patch("django.utils.timezone.now", return_value=self.now)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _code(self, secret=None):
+        return pyotp.TOTP(secret or self.secret).at(self.now)
+
+    def _register_device(self):
+        TOTPDevice.objects.create_secret(user=self.user, title="phone", otp_secret=self.secret)
+
+    def _login(self):
+        return self.client.post(reverse("login"), {"username": "totp-user", "password": self.password})
+
+    def test_user_without_device_logs_in_with_password(self):
+        response = self._login()
+
+        self.assertRedirects(response, "/", fetch_redirect_response=False)
+        self.assertEqual(self.client.session["_auth_user_id"], str(self.user.id))
+
+    def test_password_alone_does_not_log_in_when_device_registered(self):
+        self._register_device()
+
+        response = self._login()
+
+        self.assertRedirects(response, reverse("login_verify"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+        # 確認待ちのままでは認証が必要なページに入れない
+        response = self.client.get(reverse("custom_auth:index"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("login"), response["Location"])
+
+    def test_valid_code_completes_login(self):
+        self._register_device()
+        self._login()
+
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertRedirects(response, "/", fetch_redirect_response=False)
+        self.assertEqual(self.client.session["_auth_user_id"], str(self.user.id))
+        self.assertNotIn(two_factor.SESSION_CHALLENGE_ID, self.client.session)
+        self.assertFalse(TwoFactorChallenge.objects.exists())
+
+    def test_wrong_code_is_rejected(self):
+        self._register_device()
+        self._login()
+
+        response = self.client.post(reverse("login_verify"), {"token": "000000"})
+
+        if self._code() == "000000":
+            self.skipTest("偶然 000000 が正しいコードだった")
+        self.assertContains(response, "認証コードが一致しません")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_too_many_wrong_codes_restart_from_password(self):
+        self._register_device()
+        self._login()
+        wrong = "%06d" % ((int(self._code()) + 500000) % 1000000)
+
+        for _ in range(two_factor.MAX_ATTEMPTS):
+            response = self.client.post(reverse("login_verify"), {"token": wrong})
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        # 上限後は正しいコードでもログインできない
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_pending_login_expires(self):
+        self._register_device()
+        self._login()
+        session = self.client.session
+        session[two_factor.SESSION_STARTED_AT] -= two_factor.TIMEOUT_SECONDS + 1
+        session.save()
+
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_code_cannot_be_replayed_in_the_same_time_step(self):
+        self._register_device()
+        code = self._code()
+        self._login()
+        self.client.post(reverse("login_verify"), {"token": code})
+        self.assertIn("_auth_user_id", self.client.session)
+
+        # 盗み見た同じコードで別のセッションからログインしようとしても通らない
+        other = self.client_class()
+        other.post(reverse("login"), {"username": "totp-user", "password": self.password})
+        response = other.post(reverse("login_verify"), {"token": code})
+
+        self.assertContains(response, "認証コードが一致しません")
+        self.assertNotIn("_auth_user_id", other.session)
+
+    def test_inactive_device_is_not_accepted(self):
+        active_secret = pyotp.random_base32()
+        TOTPDevice.objects.create(user=self.user, title="new", secret=active_secret, is_active=True)
+        TOTPDevice.objects.create(user=self.user, title="lost", secret=self.secret, is_active=False)
+        self._login()
+
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
+
+        if self._code(active_secret) == self._code():
+            self.skipTest("偶然 2 つのデバイスのコードが一致した")
+        self.assertContains(response, "認証コードが一致しません")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_duplicate_device_cannot_be_created(self):
+        self._register_device()
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            TOTPDevice.objects.create(user=self.user, title="dup", secret=self.secret, is_active=True)
+
+    def test_attempt_limit_is_counted_in_the_database(self):
+        """並列送信でセッションの値が上書きされても、DB の試行回数で上限を判定する"""
+        self._register_device()
+        self._login()
+        TwoFactorChallenge.objects.update(attempts=two_factor.MAX_ATTEMPTS - 1)
+        wrong = "%06d" % ((int(self._code()) + 500000) % 1000000)
+
+        response = self.client.post(reverse("login_verify"), {"token": wrong})
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertFalse(TwoFactorChallenge.objects.exists())
+
+    def test_exhausted_challenge_rejects_even_the_correct_code(self):
+        self._register_device()
+        self._login()
+        TwoFactorChallenge.objects.update(attempts=two_factor.MAX_ATTEMPTS)
+
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def _wrong_code(self):
+        return "%06d" % ((int(self._code()) + 500000) % 1000000)
+
+    def test_logging_in_again_does_not_reset_the_user_limit(self):
+        """パスワードを知っていても、ログインし直して試行枠を補充できない"""
+        self._register_device()
+        for _ in range(two_factor.USER_MAX_FAILURES // two_factor.MAX_ATTEMPTS):
+            self._login()
+            for _ in range(two_factor.MAX_ATTEMPTS):
+                self.client.post(reverse("login_verify"), {"token": self._wrong_code()})
+        self.assertTrue(two_factor.is_locked(self.user))
+
+        self._login()
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertContains(response, "一時的に受け付けを停止しています")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_parallel_sessions_share_the_user_limit(self):
+        self._register_device()
+        clients = [self.client_class() for _ in range(3)]
+        for client in clients:
+            client.post(reverse("login"), {"username": "totp-user", "password": self.password})
+        TwoFactorThrottle.objects.update_or_create(
+            user=self.user, defaults={"failures": two_factor.USER_MAX_FAILURES - 1, "window_started_at": self.now}
+        )
+
+        clients[0].post(reverse("login_verify"), {"token": self._wrong_code()})
+        response = clients[1].post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertContains(response, "一時的に受け付けを停止しています")
+        self.assertNotIn("_auth_user_id", clients[1].session)
+
+    def test_user_limit_is_lifted_after_the_window(self):
+        self._register_device()
+        self._login()
+        TwoFactorThrottle.objects.update_or_create(
+            user=self.user,
+            defaults={
+                "failures": two_factor.USER_MAX_FAILURES,
+                "window_started_at": self.now - datetime.timedelta(seconds=two_factor.USER_WINDOW_SECONDS + 1),
+            },
+        )
+
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertRedirects(response, "/", fetch_redirect_response=False)
+        self.assertEqual(TwoFactorThrottle.objects.get(user=self.user).failures, 0)
+
+    def test_successful_login_resets_the_user_failures(self):
+        self._register_device()
+        self._login()
+        self.client.post(reverse("login_verify"), {"token": self._wrong_code()})
+        self.assertEqual(TwoFactorThrottle.objects.get(user=self.user).failures, 1)
+
+        self.client.post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertEqual(TwoFactorThrottle.objects.get(user=self.user).failures, 0)
+
+    def test_blank_code_shows_an_error(self):
+        self._register_device()
+        self._login()
+
+        response = self.client.post(reverse("login_verify"), {"token": ""})
+
+        self.assertContains(response, "6桁の認証コードを入力してください")
+
+    def test_duplicate_registration_is_ignored(self):
+        self._register_device()
+        self._register_device()
+
+        self.assertEqual(TOTPDevice.objects.filter(user=self.user).count(), 1)
+
+    def test_pending_login_is_discarded_after_password_change(self):
+        self._register_device()
+        self._login()
+        self.user.set_password("changed-password-123")
+        self.user.save()
+
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_admin_login_redirects_to_two_factor_login(self):
+        self.user.is_staff = True
+        self.user.save()
+        self._register_device()
+
+        response = self.client.post("/admin/login/", {"username": "totp-user", "password": self.password})
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_verify_page_without_password_step_redirects_to_login(self):
+        response = self.client.get(reverse("login_verify"))
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+
+
+class LogoutTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create(
+            username="leaver", username_jp="退出", email="leaver@example.com", is_active=True
+        )
+        self.client.force_login(self.user)
+
+    def test_get_does_not_log_out(self):
+        response = self.client.get(reverse("logout"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "ログアウトしますか")
+        self.assertEqual(self.client.session["_auth_user_id"], str(self.user.id))
+
+    def test_post_logs_out(self):
+        response = self.client.post(reverse("logout"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+
+class AuditNotifyMaskingTests(TestCase):
+    def test_password_hash_is_not_sent_to_slack(self):
+        user = get_user_model()(username="masked", username_jp="伏字", email="masked@example.com")
+        user.set_password("secret-password")
+        client = mock.Mock()
+
+        with mock.patch("shifttimes.notify._get_webhook_client", return_value=client):
+            notify.notify_insert_db(model_name="User", instance=user)
+
+        text = client.send.call_args.kwargs["attachments"][0]["text"]
+        self.assertNotIn(user.password, text)
+        self.assertIn(notify._MASKED_VALUE, text)
