@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "シフトの登録・共有・集計を行うシフト管理システム"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "django>=5.1,<6",
+    "django>=5.1,<7",
     "django-configurations",
     "django-debug-toolbar",
     "django-mathfilters",
