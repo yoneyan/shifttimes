@@ -969,10 +969,13 @@ class LineLoginViewTests(TestCase):
         self.assertRedirects(response, reverse("login_verify"), fetch_redirect_response=False)
         self.assertNotIn("_auth_user_id", self.client.session)
 
-        response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(secret).now()})
+        # コードの生成と照合で同じ時刻を使い、時間枠の切り替わりでテストが揺れないようにする
+        now = datetime.datetime(2026, 1, 15, 12, 0, 10)
+        with mock.patch("django.utils.timezone.now", return_value=now):
+            response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(secret).at(now)})
 
-        self.assertRedirects(response, "/", fetch_redirect_response=False)
-        self.assertEqual(self.client.session["_auth_user_id"], str(self.user.id))
+            self.assertRedirects(response, "/", fetch_redirect_response=False)
+            self.assertEqual(self.client.session["_auth_user_id"], str(self.user.id))
 
 
 @override_settings(**LINE_SETTINGS)

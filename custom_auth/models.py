@@ -494,10 +494,9 @@ class TOTPDeviceManager(models.Manager):
     def create_secret(self, user=None, title="", otp_secret=""):
         if not user:
             raise ValueError("user_id is not found......")
-        # 二重送信などで同じシークレットのデバイスが複数できないようにする
-        if self.filter(user=user, secret=otp_secret).exists():
-            return
-        self.create(title=title, user=user, secret=otp_secret, is_active=True)
+        # 二重送信などで同じシークレットのデバイスが複数できないようにする。
+        # (user, secret) の一意制約があるので、並行して送られても get_or_create が競合を吸収する
+        self.get_or_create(user=user, secret=otp_secret, defaults={"title": title, "is_active": True})
 
     def active(self, user):
         """ログインの認証に使えるデバイス（管理画面で無効化したものは除く）"""
@@ -553,6 +552,27 @@ class TOTPDevice(models.Model):
     class Meta:
         verbose_name = "TOTP Device"
         verbose_name_plural = "TOTP Device"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "secret"], name="totpdevice_unique_user_secret"),
+        ]
+
+    def __str__(self):
+        return "%d[%s]" % (self.id, self.user.username)
+
+
+class TwoFactorChallenge(models.Model):
+    """ログイン時の 2 要素認証の確認待ち
+
+    失敗回数をセッションではなく DB で数え、並列リクエストでも試行上限を超えさせない。
+    """
+
+    created_at = models.DateTimeField("作成日", default=timezone.now)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    attempts = models.PositiveIntegerField("認証コードの試行回数", default=0)
+
+    class Meta:
+        verbose_name = "2要素認証の確認待ち"
+        verbose_name_plural = "2要素認証の確認待ち"
 
     def __str__(self):
         return "%d[%s]" % (self.id, self.user.username)

@@ -1,3 +1,4 @@
+import datetime
 import importlib
 import os
 from contextlib import contextmanager
@@ -6,11 +7,12 @@ from unittest import mock, skipUnless
 import pyotp
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 from django.urls import NoReverseMatch, clear_url_caches, reverse
 
 from custom_auth import two_factor
-from custom_auth.models import Group, TOTPDevice, UserGroup
+from custom_auth.models import Group, TOTPDevice, TwoFactorChallenge, UserGroup
 from shifttimes import notify
 
 # ONPREMISE_MODE で settings.py が差し替える設定
@@ -181,6 +183,14 @@ class TwoFactorLoginTests(TestCase):
         self.user.set_password(self.password)
         self.user.save()
         self.secret = pyotp.random_base32()
+        # コードの生成と照合で同じ時刻を使い、30 秒の時間枠の切り替わりでテストが揺れないようにする
+        self.now = datetime.datetime(2026, 1, 15, 12, 0, 10)
+        patcher = mock.patch("django.utils.timezone.now", return_value=self.now)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _code(self, secret=None):
+        return pyotp.TOTP(secret or self.secret).at(self.now)
 
     def _register_device(self):
         TOTPDevice.objects.create_secret(user=self.user, title="phone", otp_secret=self.secret)
@@ -210,11 +220,12 @@ class TwoFactorLoginTests(TestCase):
         self._register_device()
         self._login()
 
-        response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(self.secret).now()})
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
 
         self.assertRedirects(response, "/", fetch_redirect_response=False)
         self.assertEqual(self.client.session["_auth_user_id"], str(self.user.id))
-        self.assertNotIn(two_factor.SESSION_USER_ID, self.client.session)
+        self.assertNotIn(two_factor.SESSION_CHALLENGE_ID, self.client.session)
+        self.assertFalse(TwoFactorChallenge.objects.exists())
 
     def test_wrong_code_is_rejected(self):
         self._register_device()
@@ -222,7 +233,7 @@ class TwoFactorLoginTests(TestCase):
 
         response = self.client.post(reverse("login_verify"), {"token": "000000"})
 
-        if pyotp.TOTP(self.secret).verify("000000"):
+        if self._code() == "000000":
             self.skipTest("偶然 000000 が正しいコードだった")
         self.assertContains(response, "認証コードが一致しません")
         self.assertNotIn("_auth_user_id", self.client.session)
@@ -230,14 +241,14 @@ class TwoFactorLoginTests(TestCase):
     def test_too_many_wrong_codes_restart_from_password(self):
         self._register_device()
         self._login()
-        wrong = "%06d" % ((int(pyotp.TOTP(self.secret).now()) + 500000) % 1000000)
+        wrong = "%06d" % ((int(self._code()) + 500000) % 1000000)
 
         for _ in range(two_factor.MAX_ATTEMPTS):
             response = self.client.post(reverse("login_verify"), {"token": wrong})
 
         self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
         # 上限後は正しいコードでもログインできない
-        response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(self.secret).now()})
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
         self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
         self.assertNotIn("_auth_user_id", self.client.session)
 
@@ -248,14 +259,14 @@ class TwoFactorLoginTests(TestCase):
         session[two_factor.SESSION_STARTED_AT] -= two_factor.TIMEOUT_SECONDS + 1
         session.save()
 
-        response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(self.secret).now()})
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
 
         self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
         self.assertNotIn("_auth_user_id", self.client.session)
 
     def test_code_cannot_be_replayed_in_the_same_time_step(self):
         self._register_device()
-        code = pyotp.TOTP(self.secret).now()
+        code = self._code()
         self._login()
         self.client.post(reverse("login_verify"), {"token": code})
         self.assertIn("_auth_user_id", self.client.session)
@@ -274,21 +285,48 @@ class TwoFactorLoginTests(TestCase):
         TOTPDevice.objects.create(user=self.user, title="lost", secret=self.secret, is_active=False)
         self._login()
 
-        response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(self.secret).now()})
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
 
-        if pyotp.TOTP(active_secret).now() == pyotp.TOTP(self.secret).now():
+        if self._code(active_secret) == self._code():
             self.skipTest("偶然 2 つのデバイスのコードが一致した")
         self.assertContains(response, "認証コードが一致しません")
         self.assertNotIn("_auth_user_id", self.client.session)
 
-    def test_code_cannot_be_replayed_through_a_duplicate_device(self):
-        # 修正前の二重送信などで同じシークレットのデバイスが 2 件ある状態
-        TOTPDevice.objects.create(user=self.user, title="a", secret=self.secret, is_active=True)
-        TOTPDevice.objects.create(user=self.user, title="b", secret=self.secret, is_active=True)
-        code = pyotp.TOTP(self.secret).now()
+    def test_duplicate_device_cannot_be_created(self):
+        self._register_device()
 
-        self.assertTrue(TOTPDevice.objects.check_totp(user=self.user, code=code))
-        self.assertFalse(TOTPDevice.objects.check_totp(user=self.user, code=code))
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            TOTPDevice.objects.create(user=self.user, title="dup", secret=self.secret, is_active=True)
+
+    def test_attempt_limit_is_counted_in_the_database(self):
+        """並列送信でセッションの値が上書きされても、DB の試行回数で上限を判定する"""
+        self._register_device()
+        self._login()
+        TwoFactorChallenge.objects.update(attempts=two_factor.MAX_ATTEMPTS - 1)
+        wrong = "%06d" % ((int(self._code()) + 500000) % 1000000)
+
+        response = self.client.post(reverse("login_verify"), {"token": wrong})
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertFalse(TwoFactorChallenge.objects.exists())
+
+    def test_exhausted_challenge_rejects_even_the_correct_code(self):
+        self._register_device()
+        self._login()
+        TwoFactorChallenge.objects.update(attempts=two_factor.MAX_ATTEMPTS)
+
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_blank_code_shows_an_error(self):
+        self._register_device()
+        self._login()
+
+        response = self.client.post(reverse("login_verify"), {"token": ""})
+
+        self.assertContains(response, "6桁の認証コードを入力してください")
 
     def test_duplicate_registration_is_ignored(self):
         self._register_device()
@@ -302,7 +340,7 @@ class TwoFactorLoginTests(TestCase):
         self.user.set_password("changed-password-123")
         self.user.save()
 
-        response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(self.secret).now()})
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
 
         self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
         self.assertNotIn("_auth_user_id", self.client.session)

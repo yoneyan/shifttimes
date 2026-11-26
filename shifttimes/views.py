@@ -66,13 +66,16 @@ def login_verify(request):
 
     error = None
     form = OTPForm(data=request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        if two_factor.verify(request, user, form.cleaned_data["token"]):
+    if request.method == "POST":
+        if not form.is_valid():
+            error = "6桁の認証コードを入力してください"
+        elif two_factor.verify(request, user, form.cleaned_data["token"]):
             return redirect(settings.LOGIN_REDIRECT_URL)
-        if two_factor.pending_user(request) is None:
+        elif two_factor.pending_user(request) is None:
             # 失敗回数の上限に達したので最初からやり直させる
             return redirect("login")
-        error = "認証コードが一致しません"
+        else:
+            error = "認証コードが一致しません"
 
     return render(request, "login_verify.html", {"form": form, "error": error})
 
