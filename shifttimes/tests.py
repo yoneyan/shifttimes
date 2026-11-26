@@ -3,12 +3,15 @@ import os
 from contextlib import contextmanager
 from unittest import mock, skipUnless
 
+import pyotp
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import NoReverseMatch, clear_url_caches, reverse
 
-from custom_auth.models import Group, UserGroup
+from custom_auth import two_factor
+from custom_auth.models import Group, TOTPDevice, UserGroup
+from shifttimes import notify
 
 # ONPREMISE_MODE で settings.py が差し替える設定
 ONPREMISE_SETTING_NAMES = (
@@ -161,3 +164,131 @@ class OnpremiseBillingDisabledTests(TestCase):
         response = self.client.get(reverse("custom_auth_group:admin_home", args=[self.group.id]))
 
         self.assertContains(response, "請求管理")
+
+
+class TwoFactorLoginTests(TestCase):
+    """TOTP を登録したユーザはパスワードだけではログインできない"""
+
+    password = "correct-horse-battery"
+
+    def setUp(self):
+        self.user = get_user_model().objects.create(
+            username="totp-user",
+            username_jp="二要素",
+            email="totp@example.com",
+            is_active=True,
+        )
+        self.user.set_password(self.password)
+        self.user.save()
+        self.secret = pyotp.random_base32()
+
+    def _register_device(self):
+        TOTPDevice.objects.create_secret(user=self.user, title="phone", otp_secret=self.secret)
+
+    def _login(self):
+        return self.client.post(reverse("login"), {"username": "totp-user", "password": self.password})
+
+    def test_user_without_device_logs_in_with_password(self):
+        response = self._login()
+
+        self.assertRedirects(response, "/", fetch_redirect_response=False)
+        self.assertEqual(self.client.session["_auth_user_id"], str(self.user.id))
+
+    def test_password_alone_does_not_log_in_when_device_registered(self):
+        self._register_device()
+
+        response = self._login()
+
+        self.assertRedirects(response, reverse("login_verify"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+        # 確認待ちのままでは認証が必要なページに入れない
+        response = self.client.get(reverse("custom_auth:index"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("login"), response["Location"])
+
+    def test_valid_code_completes_login(self):
+        self._register_device()
+        self._login()
+
+        response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(self.secret).now()})
+
+        self.assertRedirects(response, "/", fetch_redirect_response=False)
+        self.assertEqual(self.client.session["_auth_user_id"], str(self.user.id))
+        self.assertNotIn(two_factor.SESSION_USER_ID, self.client.session)
+
+    def test_wrong_code_is_rejected(self):
+        self._register_device()
+        self._login()
+
+        response = self.client.post(reverse("login_verify"), {"token": "000000"})
+
+        if pyotp.TOTP(self.secret).verify("000000"):
+            self.skipTest("偶然 000000 が正しいコードだった")
+        self.assertContains(response, "認証コードが一致しません")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_too_many_wrong_codes_restart_from_password(self):
+        self._register_device()
+        self._login()
+        wrong = "%06d" % ((int(pyotp.TOTP(self.secret).now()) + 500000) % 1000000)
+
+        for _ in range(two_factor.MAX_ATTEMPTS):
+            response = self.client.post(reverse("login_verify"), {"token": wrong})
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        # 上限後は正しいコードでもログインできない
+        response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(self.secret).now()})
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_pending_login_expires(self):
+        self._register_device()
+        self._login()
+        session = self.client.session
+        session[two_factor.SESSION_STARTED_AT] -= two_factor.TIMEOUT_SECONDS + 1
+        session.save()
+
+        response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(self.secret).now()})
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_verify_page_without_password_step_redirects_to_login(self):
+        response = self.client.get(reverse("login_verify"))
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+
+
+class LogoutTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create(
+            username="leaver", username_jp="退出", email="leaver@example.com", is_active=True
+        )
+        self.client.force_login(self.user)
+
+    def test_get_does_not_log_out(self):
+        response = self.client.get(reverse("logout"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "ログアウトしますか")
+        self.assertEqual(self.client.session["_auth_user_id"], str(self.user.id))
+
+    def test_post_logs_out(self):
+        response = self.client.post(reverse("logout"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+
+class AuditNotifyMaskingTests(TestCase):
+    def test_password_hash_is_not_sent_to_slack(self):
+        user = get_user_model()(username="masked", username_jp="伏字", email="masked@example.com")
+        user.set_password("secret-password")
+        client = mock.Mock()
+
+        with mock.patch("shifttimes.notify._get_webhook_client", return_value=client):
+            notify.notify_insert_db(model_name="User", instance=user)
+
+        text = client.send.call_args.kwargs["attachments"][0]["text"]
+        self.assertNotIn(user.password, text)
+        self.assertIn(notify._MASKED_VALUE, text)

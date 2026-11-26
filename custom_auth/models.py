@@ -482,7 +482,7 @@ class TOTPDeviceManager(models.Manager):
     def check_max_totp_device(self, user=None):
         if not user:
             raise ValueError("user_id is not found......")
-        return self.filter(user=user).count() <= 5
+        return self.filter(user=user).count() < 5
 
     def generate_secret(self, email=""):
         otp_secret = pyotp.random_base32()

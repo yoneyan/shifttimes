@@ -39,4 +39,5 @@ COPY files/default.conf /etc/nginx/sites-enabled/default
 EXPOSE 8010
 
 COPY files/entrypoint.sh /opt/app/
-CMD ["bash", "-xe", "/opt/app/entrypoint.sh"]
+# -x は SECRET_KEY などの値をログに出してしまうため付けない
+CMD ["bash", "-e", "/opt/app/entrypoint.sh"]

@@ -26,6 +26,7 @@ from shifttimes import views
 
 urlpatterns = [
     path("login/", views.login, name="login"),
+    path("login/verify/", views.login_verify, name="login_verify"),
     path("logout/", views.logout, name="logout"),
     path("", views.index, name="index"),
     path("forget/", include("custom_auth.forget_urls")),

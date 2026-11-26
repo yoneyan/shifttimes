@@ -23,8 +23,9 @@ class GroupAddForm(forms.Form):
             field.widget.attrs["placeholder"] = field.label
 
     def clean(self):
+        # ChoiceField の値は文字列なので "False"（同意しない）も真になる。文字列で比較する
         agree = self.cleaned_data.get("agree")
-        if not agree:
+        if agree != "True":
             raise forms.ValidationError("規約に同意されていません")
 
     def create_group(self, user_id):

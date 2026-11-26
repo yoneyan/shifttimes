@@ -215,6 +215,17 @@ def create_checkout_session(request, group_id):
     return redirect(session.url, permanent=False)
 
 
+def _checkout_session_belongs_to(session, group):
+    """チェックアウトセッションがこのグループの顧客・メタデータで作られたものか。"""
+    customer = session.get("customer")
+    if isinstance(customer, dict):
+        customer = customer.get("id")
+    if not group.stripe_customer_id or customer != group.stripe_customer_id:
+        return False
+    metadata = session.get("metadata") or {}
+    return str(metadata.get("group_id", "")) == str(group.id)
+
+
 @login_required
 def billing_success(request, group_id):
     group = _get_admin_group(request, group_id)
@@ -227,11 +238,14 @@ def billing_success(request, group_id):
     if session_id and _stripe_ready():
         try:
             session = stripe.checkout.Session.retrieve(session_id, expand=["subscription"])
-            subscription = session.get("subscription")
-            if isinstance(subscription, str):
-                subscription = stripe.Subscription.retrieve(subscription)
-            if subscription:
-                _sync_subscription(group, subscription)
+            # session_id は URL から渡るので、別グループ(別顧客)の決済を流用させないよう
+            # このグループのために作ったチェックアウトかを確かめてから反映する
+            if _checkout_session_belongs_to(session, group):
+                subscription = session.get("subscription")
+                if isinstance(subscription, str):
+                    subscription = stripe.Subscription.retrieve(subscription)
+                if subscription:
+                    _sync_subscription(group, subscription)
         except stripe.error.StripeError:
             pass
 

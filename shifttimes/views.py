@@ -1,10 +1,10 @@
 from django.conf import settings
-from django.contrib.auth import login as user_login
 from django.contrib.auth import logout as user_logout
-from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
+from custom_auth import two_factor
+from custom_auth.form import OTPForm
 from notice.models import Notice
 from shift.models import ShiftEntry
 from shifttimes.form import LoginForm
@@ -49,8 +49,8 @@ def login(request):
         if form.is_valid():
             user = form.get_user()
             if user:
-                user_login(request, user)
-                return redirect("/")
+                # TOTP を登録しているユーザは認証コードの入力を挟む
+                return two_factor.login_or_verify(request, user)
 
     else:
         form = LoginForm()
@@ -58,8 +58,31 @@ def login(request):
     return render(request, "login.html", context)
 
 
-@login_required
+def login_verify(request):
+    """ログイン時の 2 要素認証（認証コードの入力）"""
+    user = two_factor.pending_user(request)
+    if user is None:
+        return redirect("login")
+
+    error = None
+    form = OTPForm(data=request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        if two_factor.verify(request, user, form.cleaned_data["token"]):
+            return redirect(settings.LOGIN_REDIRECT_URL)
+        if two_factor.pending_user(request) is None:
+            # 失敗回数の上限に達したので最初からやり直させる
+            return redirect("login")
+        error = "認証コードが一致しません"
+
+    return render(request, "login_verify.html", {"form": form, "error": error})
+
+
 def logout(request):
+    # GET でのログアウトはリンクや画像を踏ませるだけで強制ログアウトできてしまうため、
+    # 実際のログアウトは CSRF トークン付きの POST に限る
+    if request.method != "POST":
+        if not request.user.is_authenticated:
+            return redirect("login")
+        return render(request, "logout.html", {"confirm": True})
     user_logout(request)
-    context = {}
-    return render(request, "logout.html", context)
+    return render(request, "logout.html", {})
