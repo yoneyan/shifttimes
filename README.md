@@ -236,7 +236,7 @@ HTTP のまま運用する構成を壊さないよう既定はすべて無効で
 ## デプロイ
 
 `Dockerfile` は nginx + gunicorn の構成でイメージを作ります。
-公開イメージは `v*` タグの push 時に GitHub Container Registry
+公開イメージは `vX.Y.Z` タグの push 時に GitHub Container Registry
 （`ghcr.io/yoneyan/shifttimes`）へ push します（下記「リリース」）。
 
 ```bash
@@ -246,11 +246,19 @@ docker run -p 8010:8010 --env-file .env shifttimes
 
 ### リリース
 
-`v` で始まるタグを push すると `.github/workflows/release.yaml` が動き、
-テストが通った場合に限り次を行います。
+バージョンは `vX.Y.Z` 形式のタグで管理します（`pyproject.toml` の `version` は使いません）。
+
+| 上げる桁 | 対象となる変更 |
+|---|---|
+| `X`（メジャー） | 既存の運用やデータに手当てが必要な変更（互換性のない設定・挙動の変更など） |
+| `Y`（マイナー） | 機能追加、DB マイグレーションを含む変更、依存ライブラリのメジャー更新 |
+| `Z`（パッチ） | 不具合修正、依存ライブラリのマイナー・パッチ更新（後述の自動リリースの対象） |
+
+`vX.Y.Z` 形式のタグを push すると `.github/workflows/release.yaml` が動き、
+テストが通った場合に限り次を行います（形式が違うタグはエラーになります）。
 
 1. イメージを GitHub Container Registry（`ghcr.io/yoneyan/shifttimes`）へ push
-   （`v1.2.3` なら `1.2.3` / `1.2` / `1` / `latest` / `sha-xxxxxxx` タグ）
+   （`v1.2.3` なら `1.2.3` / `1.2` / `1` / `latest` / `sha-xxxxxxx` タグ。`v0.x` では `0` は付きません）
 2. 前回タグからのコミット一覧を本文にした GitHub Release を作成
 
 ```bash
@@ -259,6 +267,26 @@ git push origin v1.2.3
 ```
 
 `v1.3.0-rc.1` のようにハイフンを含むタグはプレリリース扱いになり、`latest` は更新されません。
+
+#### 依存ライブラリ更新の自動パッチリリース
+
+`master` に push されるたびに `.github/workflows/auto-patch-release.yaml` が、
+前回の安定版タグ（`vX.Y.Z`）からの変更を調べます。次をすべて満たす場合は、
+`Z` を 1 上げたタグ（例: `v1.2.3` → `v1.2.4`）で自動的にリリースします。
+
+- 変更が依存ライブラリの更新（`uv.lock` / `pyproject.toml`）と、アプリに影響しないファイル
+  （`.github/` 配下・`docs/` 配下・Markdown など）だけである
+- 本番で使う依存（`dev` グループ以外）のバージョンが変わっている（開発用ツールだけの更新ではリリースしない）
+- どの依存もメジャーバージョンが上がっていない（`0.x` 系はマイナーの変化も破壊的変更とみなす。
+  `certifi` など年をバージョンにするライブラリは除く）
+- 前回タグの DB に対して未適用のマイグレーションがない（ライブラリ同梱のマイグレーションも含む）
+
+条件を満たさない場合は何もせず、ワークフローの実行結果（Summary）に理由と依存の変更一覧を出します。
+その場合は内容を確認し、上の表に従って手動でタグを作成してください。
+タグは CI とイメージの公開が成功してから作成されるため、失敗時に中途半端なタグは残りません。
+判定内容は `python3 .github/scripts/auto_patch_release.py` でローカルでも確認できます。
+
+自動パッチリリースの基準になるタグが必要なため、最初の 1 つ（例: `v0.1.0`）は手動で作成してください。
 
 ```bash
 docker pull ghcr.io/yoneyan/shifttimes:latest
