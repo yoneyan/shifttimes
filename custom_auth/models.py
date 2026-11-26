@@ -578,6 +578,26 @@ class TwoFactorChallenge(models.Model):
         return "%d[%s]" % (self.id, self.user.username)
 
 
+class TwoFactorThrottle(models.Model):
+    """ユーザ単位の認証コードの試行制限
+
+    確認待ち（``TwoFactorChallenge``）ごとの上限だけだと、パスワードを知っている攻撃者が
+    ログインし直したり並列にセッションを作ったりして試行枠を補充できる。ユーザごとに
+    一定時間内の失敗回数を数え、ログインし直してもリセットされない上限をかける。
+    """
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
+    failures = models.PositiveIntegerField("時間枠内の失敗回数", default=0)
+    window_started_at = models.DateTimeField("時間枠の開始", default=timezone.now)
+
+    class Meta:
+        verbose_name = "2要素認証の試行制限"
+        verbose_name_plural = "2要素認証の試行制限"
+
+    def __str__(self):
+        return "%s: %d" % (self.user.username, self.failures)
+
+
 class LineAccount(models.Model):
     """ユーザと LINE アカウントの連携
 

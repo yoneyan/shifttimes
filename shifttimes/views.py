@@ -71,6 +71,11 @@ def login_verify(request):
             error = "6桁の認証コードを入力してください"
         elif two_factor.verify(request, user, form.cleaned_data["token"]):
             return redirect(settings.LOGIN_REDIRECT_URL)
+        elif two_factor.is_locked(user):
+            error = (
+                "認証コードの入力に続けて失敗したため、一時的に受け付けを停止しています。"
+                "しばらく待ってから再度お試しください"
+            )
         elif two_factor.pending_user(request) is None:
             # 失敗回数の上限に達したので最初からやり直させる
             return redirect("login")

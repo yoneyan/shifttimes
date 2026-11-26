@@ -12,7 +12,7 @@ from django.test import TestCase, override_settings
 from django.urls import NoReverseMatch, clear_url_caches, reverse
 
 from custom_auth import two_factor
-from custom_auth.models import Group, TOTPDevice, TwoFactorChallenge, UserGroup
+from custom_auth.models import Group, TOTPDevice, TwoFactorChallenge, TwoFactorThrottle, UserGroup
 from shifttimes import notify
 
 # ONPREMISE_MODE で settings.py が差し替える設定
@@ -319,6 +319,65 @@ class TwoFactorLoginTests(TestCase):
 
         self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
         self.assertNotIn("_auth_user_id", self.client.session)
+
+    def _wrong_code(self):
+        return "%06d" % ((int(self._code()) + 500000) % 1000000)
+
+    def test_logging_in_again_does_not_reset_the_user_limit(self):
+        """パスワードを知っていても、ログインし直して試行枠を補充できない"""
+        self._register_device()
+        for _ in range(two_factor.USER_MAX_FAILURES // two_factor.MAX_ATTEMPTS):
+            self._login()
+            for _ in range(two_factor.MAX_ATTEMPTS):
+                self.client.post(reverse("login_verify"), {"token": self._wrong_code()})
+        self.assertTrue(two_factor.is_locked(self.user))
+
+        self._login()
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertContains(response, "一時的に受け付けを停止しています")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_parallel_sessions_share_the_user_limit(self):
+        self._register_device()
+        clients = [self.client_class() for _ in range(3)]
+        for client in clients:
+            client.post(reverse("login"), {"username": "totp-user", "password": self.password})
+        TwoFactorThrottle.objects.update_or_create(
+            user=self.user, defaults={"failures": two_factor.USER_MAX_FAILURES - 1, "window_started_at": self.now}
+        )
+
+        clients[0].post(reverse("login_verify"), {"token": self._wrong_code()})
+        response = clients[1].post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertContains(response, "一時的に受け付けを停止しています")
+        self.assertNotIn("_auth_user_id", clients[1].session)
+
+    def test_user_limit_is_lifted_after_the_window(self):
+        self._register_device()
+        self._login()
+        TwoFactorThrottle.objects.update_or_create(
+            user=self.user,
+            defaults={
+                "failures": two_factor.USER_MAX_FAILURES,
+                "window_started_at": self.now - datetime.timedelta(seconds=two_factor.USER_WINDOW_SECONDS + 1),
+            },
+        )
+
+        response = self.client.post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertRedirects(response, "/", fetch_redirect_response=False)
+        self.assertEqual(TwoFactorThrottle.objects.get(user=self.user).failures, 0)
+
+    def test_successful_login_resets_the_user_failures(self):
+        self._register_device()
+        self._login()
+        self.client.post(reverse("login_verify"), {"token": self._wrong_code()})
+        self.assertEqual(TwoFactorThrottle.objects.get(user=self.user).failures, 1)
+
+        self.client.post(reverse("login_verify"), {"token": self._code()})
+
+        self.assertEqual(TwoFactorThrottle.objects.get(user=self.user).failures, 0)
 
     def test_blank_code_shows_an_error(self):
         self._register_device()
