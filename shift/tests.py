@@ -208,10 +208,14 @@ class ShiftViewTests(TestCase):
 
     def test_schedule_calendar_requires_admin_but_member_view_does_not(self):
         closed_type = OpeningScheduleType.objects.create(
-            group=self.group, name="休校", blocks_shift_input=True,
+            group=self.group,
+            name="休校",
+            blocks_shift_input=True,
         )
         DateOpeningSchedule.objects.create(
-            group=self.group, work_date=date(2026, 6, 7), schedule_type=closed_type,
+            group=self.group,
+            work_date=date(2026, 6, 7),
+            schedule_type=closed_type,
         )
         self.client.force_login(self.user)
         member_admin_page = self.client.get(reverse("shift:schedule", args=[self.group.id]))
@@ -435,24 +439,30 @@ class ShiftViewTests(TestCase):
         self.client.force_login(self.admin_user)
         settings_url = reverse("shift:schedule_settings", args=[self.group.id])
 
-        self.client.post(settings_url, {
-            "action": "schedule_type",
-            "name": "研修日",
-            "color": "#AB12CD",
-            "display_order": "40",
-            "is_active": "on",
-        })
+        self.client.post(
+            settings_url,
+            {
+                "action": "schedule_type",
+                "name": "研修日",
+                "color": "#AB12CD",
+                "display_order": "40",
+                "is_active": "on",
+            },
+        )
         created = OpeningScheduleType.objects.get(group=self.group, name="研修日")
         self.assertEqual(created.color, "#ab12cd")
 
-        self.client.post(settings_url, {
-            "action": "schedule_type",
-            "schedule_type_id": str(created.id),
-            "name": "研修日",
-            "color": "#123456",
-            "display_order": "40",
-            "is_active": "on",
-        })
+        self.client.post(
+            settings_url,
+            {
+                "action": "schedule_type",
+                "schedule_type_id": str(created.id),
+                "name": "研修日",
+                "color": "#123456",
+                "display_order": "40",
+                "is_active": "on",
+            },
+        )
         created.refresh_from_db()
         self.assertEqual(created.color, "#123456")
 
@@ -461,18 +471,23 @@ class ShiftViewTests(TestCase):
 
     def test_schedule_type_rejects_invalid_color(self):
         schedule_type = OpeningScheduleType.objects.create(
-            group=self.group, name="研修日", color="#123456",
+            group=self.group,
+            name="研修日",
+            color="#123456",
         )
         self.client.force_login(self.admin_user)
 
-        self.client.post(reverse("shift:schedule_settings", args=[self.group.id]), {
-            "action": "schedule_type",
-            "schedule_type_id": str(schedule_type.id),
-            "name": "研修日",
-            "color": "red; background:url(x)",
-            "display_order": "100",
-            "is_active": "on",
-        })
+        self.client.post(
+            reverse("shift:schedule_settings", args=[self.group.id]),
+            {
+                "action": "schedule_type",
+                "schedule_type_id": str(schedule_type.id),
+                "name": "研修日",
+                "color": "red; background:url(x)",
+                "display_order": "100",
+                "is_active": "on",
+            },
+        )
 
         schedule_type.refresh_from_db()
         self.assertEqual(schedule_type.color, "#123456")
@@ -481,9 +496,7 @@ class ShiftViewTests(TestCase):
         self.client.force_login(self.admin_user)
         response = self.client.get(reverse("shift:schedule_settings", args=[self.group.id]))
 
-        used_colors = set(
-            OpeningScheduleType.objects.filter(group=self.group).values_list("color", flat=True)
-        )
+        used_colors = set(OpeningScheduleType.objects.filter(group=self.group).values_list("color", flat=True))
         self.assertNotIn(response.context["default_schedule_type_color"], used_colors)
 
     def test_schedule_page_creates_default_schedule_types_for_admin(self):
@@ -547,9 +560,7 @@ class ShiftViewTests(TestCase):
             },
         )
 
-        self.assertFalse(
-            DateOpeningSchedule.objects.filter(group=self.group, work_date=date(2026, 6, 8)).exists()
-        )
+        self.assertFalse(DateOpeningSchedule.objects.filter(group=self.group, work_date=date(2026, 6, 8)).exists())
 
     def test_schedule_settings_weekday_bulk_sets_every_matching_date(self):
         closed_type = OpeningScheduleType.objects.create(
@@ -681,10 +692,14 @@ class ShiftViewTests(TestCase):
 
     def test_summary_excludes_blocked_days_from_target_days(self):
         blocked_type = OpeningScheduleType.objects.create(
-            group=self.group, name="休校", blocks_shift_input=True,
+            group=self.group,
+            name="休校",
+            blocks_shift_input=True,
         )
         DateOpeningSchedule.objects.create(
-            group=self.group, work_date=date(2026, 6, 2), schedule_type=blocked_type,
+            group=self.group,
+            work_date=date(2026, 6, 2),
+            schedule_type=blocked_type,
         )
         ShiftEntry.objects.create(
             group=self.group,
@@ -709,7 +724,8 @@ class ShiftViewTests(TestCase):
         self.client.force_login(self.admin_user)
 
         response = self.client.get(
-            reverse("shift:summary", args=[self.group.id]), {"from": "2026-06-01"},
+            reverse("shift:summary", args=[self.group.id]),
+            {"from": "2026-06-01"},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -746,10 +762,16 @@ class TimeSlotSettingsTests(TestCase):
     def setUp(self):
         user_model = get_user_model()
         self.member = user_model.objects.create(
-            username="member", username_jp="メンバー", email="member@example.com", is_active=True,
+            username="member",
+            username_jp="メンバー",
+            email="member@example.com",
+            is_active=True,
         )
         self.admin_user = user_model.objects.create(
-            username="slot-admin", username_jp="管理者", email="slot-admin@example.com", is_active=True,
+            username="slot-admin",
+            username_jp="管理者",
+            email="slot-admin@example.com",
+            is_active=True,
         )
         self.group = Group.objects.create(name="shop", name_jp="店舗")
         self.other_group = Group.objects.create(name="other-shop", name_jp="別店舗")
@@ -794,12 +816,19 @@ class TimeSlotSettingsTests(TestCase):
 
     def test_admin_can_edit_and_disable_time_slot(self):
         time_slot = TimeSlot.objects.create(
-            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+            group=self.group,
+            name="早番",
+            start_time=time(9, 0),
+            end_time=time(13, 0),
         )
         self.client.force_login(self.admin_user)
 
         response = self._post_time_slot(
-            time_slot_id=time_slot.id, name="午前", start_time="10:00", end_time="14:00", is_active="",
+            time_slot_id=time_slot.id,
+            name="午前",
+            start_time="10:00",
+            end_time="14:00",
+            is_active="",
         )
 
         self.assertRedirects(response, self.settings_url)
@@ -810,7 +839,10 @@ class TimeSlotSettingsTests(TestCase):
 
     def test_duplicate_name_in_same_group_is_rejected(self):
         TimeSlot.objects.create(
-            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+            group=self.group,
+            name="早番",
+            start_time=time(9, 0),
+            end_time=time(13, 0),
         )
         self.client.force_login(self.admin_user)
 
@@ -837,20 +869,24 @@ class TimeSlotSettingsTests(TestCase):
 
     def test_unused_time_slot_can_be_deleted(self):
         time_slot = TimeSlot.objects.create(
-            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+            group=self.group,
+            name="早番",
+            start_time=time(9, 0),
+            end_time=time(13, 0),
         )
         self.client.force_login(self.admin_user)
 
-        response = self.client.post(
-            reverse("shift:time_slot_delete", args=[self.group.id, time_slot.id])
-        )
+        response = self.client.post(reverse("shift:time_slot_delete", args=[self.group.id, time_slot.id]))
 
         self.assertRedirects(response, self.settings_url)
         self.assertFalse(TimeSlot.objects.filter(id=time_slot.id).exists())
 
     def test_used_time_slot_is_kept_and_can_only_be_disabled(self):
         time_slot = TimeSlot.objects.create(
-            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+            group=self.group,
+            name="早番",
+            start_time=time(9, 0),
+            end_time=time(13, 0),
         )
         ShiftEntry.objects.create(
             group=self.group,
@@ -861,9 +897,7 @@ class TimeSlotSettingsTests(TestCase):
         )
         self.client.force_login(self.admin_user)
 
-        response = self.client.post(
-            reverse("shift:time_slot_delete", args=[self.group.id, time_slot.id])
-        )
+        response = self.client.post(reverse("shift:time_slot_delete", args=[self.group.id, time_slot.id]))
 
         self.assertRedirects(response, self.settings_url)
         self.assertTrue(TimeSlot.objects.filter(id=time_slot.id).exists())
@@ -875,13 +909,14 @@ class TimeSlotSettingsTests(TestCase):
 
     def test_time_slot_of_other_group_is_not_editable(self):
         other_slot = TimeSlot.objects.create(
-            group=self.other_group, name="他店の早番", start_time=time(9, 0), end_time=time(13, 0),
+            group=self.other_group,
+            name="他店の早番",
+            start_time=time(9, 0),
+            end_time=time(13, 0),
         )
         self.client.force_login(self.admin_user)
 
-        response = self.client.post(
-            reverse("shift:time_slot_delete", args=[self.group.id, other_slot.id])
-        )
+        response = self.client.post(reverse("shift:time_slot_delete", args=[self.group.id, other_slot.id]))
 
         self.assertEqual(response.status_code, 404)
         self.assertTrue(TimeSlot.objects.filter(id=other_slot.id).exists())
@@ -889,7 +924,10 @@ class TimeSlotSettingsTests(TestCase):
     def test_summary_keeps_disabled_time_slot_with_submitted_entries(self):
         """無効にした勤務時間でも、提出済みの希望が残っていれば集計に表示する"""
         time_slot = TimeSlot.objects.create(
-            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+            group=self.group,
+            name="早番",
+            start_time=time(9, 0),
+            end_time=time(13, 0),
         )
         ShiftEntry.objects.create(
             group=self.group,
@@ -912,13 +950,22 @@ class TimeSlotSettingsTests(TestCase):
 
     def test_entry_table_shows_only_own_group_time_slots(self):
         TimeSlot.objects.create(
-            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+            group=self.group,
+            name="早番",
+            start_time=time(9, 0),
+            end_time=time(13, 0),
         )
         TimeSlot.objects.create(
-            group=self.other_group, name="他店の早番", start_time=time(9, 0), end_time=time(13, 0),
+            group=self.other_group,
+            name="他店の早番",
+            start_time=time(9, 0),
+            end_time=time(13, 0),
         )
         TimeSlot.objects.create(
-            group=self.group, name="無効な時間帯", start_time=time(20, 0), end_time=time(22, 0),
+            group=self.group,
+            name="無効な時間帯",
+            start_time=time(20, 0),
+            end_time=time(22, 0),
             is_active=False,
         )
         self.client.force_login(self.member)
@@ -979,8 +1026,11 @@ class AttendanceTests(TestCase):
     def test_staff_cannot_record_attendance_in_group_without_membership(self):
         # 勤怠集計は所属メンバーしか集計しないので、非所属のスタッフには入力させない
         staff = get_user_model().objects.create(
-            username="staff", username_jp="スタッフ", email="staff@example.com",
-            is_active=True, is_staff=True,
+            username="staff",
+            username_jp="スタッフ",
+            email="staff@example.com",
+            is_active=True,
+            is_staff=True,
         )
         self.client.force_login(staff)
 
@@ -1087,8 +1137,11 @@ class AttendanceTests(TestCase):
     def test_clock_out_closes_previous_day_record_for_overnight_work(self):
         yesterday = self.today - timedelta(days=1)
         AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=yesterday,
-            start_time=time(22, 0), source=AttendanceRecord.CLOCK,
+            group=self.group,
+            user=self.user,
+            work_date=yesterday,
+            start_time=time(22, 0),
+            source=AttendanceRecord.CLOCK,
         )
         self.client.force_login(self.user)
 
@@ -1145,8 +1198,11 @@ class AttendanceTests(TestCase):
 
     def test_manual_input_deletes_record_when_times_are_cleared(self):
         record = AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=self.today,
-            start_time=time(9, 0), end_time=time(18, 0),
+            group=self.group,
+            user=self.user,
+            work_date=self.today,
+            start_time=time(9, 0),
+            end_time=time(18, 0),
         )
         self.client.force_login(self.user)
 
@@ -1205,8 +1261,12 @@ class AttendanceTests(TestCase):
 
     def test_attendance_page_shows_month_totals(self):
         AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=self.today,
-            start_time=time(9, 0), end_time=time(18, 0), break_minutes=60,
+            group=self.group,
+            user=self.user,
+            work_date=self.today,
+            start_time=time(9, 0),
+            end_time=time(18, 0),
+            break_minutes=60,
         )
         self.client.force_login(self.user)
 
@@ -1252,7 +1312,10 @@ class AttendanceTests(TestCase):
 
     def test_admin_cannot_edit_user_outside_the_group(self):
         outsider = get_user_model().objects.create(
-            username="outsider", username_jp="外部", email="outsider@example.com", is_active=True,
+            username="outsider",
+            username_jp="外部",
+            email="outsider@example.com",
+            is_active=True,
         )
         self.client.force_login(self.admin_user)
 
@@ -1291,13 +1354,22 @@ class AttendanceMultipleRecordTests(TestCase):
     def setUp(self):
         user_model = get_user_model()
         self.user = user_model.objects.create(
-            username="user", username_jp="ユーザー", email="user@example.com", is_active=True,
+            username="user",
+            username_jp="ユーザー",
+            email="user@example.com",
+            is_active=True,
         )
         self.other_user = user_model.objects.create(
-            username="other", username_jp="他メンバー", email="other@example.com", is_active=True,
+            username="other",
+            username_jp="他メンバー",
+            email="other@example.com",
+            is_active=True,
         )
         self.admin_user = user_model.objects.create(
-            username="admin", username_jp="管理者", email="admin@example.com", is_active=True,
+            username="admin",
+            username_jp="管理者",
+            email="admin@example.com",
+            is_active=True,
         )
         self.group = Group.objects.create(name="shop", name_jp="店舗")
         UserGroup.objects.create(user=self.user, group=self.group)
@@ -1323,8 +1395,12 @@ class AttendanceMultipleRecordTests(TestCase):
 
     def _create(self, start, end=None, user=None, **kwargs):
         return AttendanceRecord.objects.create(
-            group=self.group, user=user or self.user, work_date=self.today,
-            start_time=start, end_time=end, **kwargs,
+            group=self.group,
+            user=user or self.user,
+            work_date=self.today,
+            start_time=start,
+            end_time=end,
+            **kwargs,
         )
 
     def _now(self, hour, minute=0):
@@ -1488,8 +1564,11 @@ class AttendanceMultipleRecordTests(TestCase):
         summary_url = reverse("shift:attendance_summary", args=[self.group.id])
         self.client.force_login(self.admin_user)
         base = {
-            "month": self.month_value, "user_id": str(self.user.id), "work_date": self.today.isoformat(),
-            "break_minutes": "", "note": "",
+            "month": self.month_value,
+            "user_id": str(self.user.id),
+            "work_date": self.today.isoformat(),
+            "break_minutes": "",
+            "note": "",
         }
 
         self.client.post(summary_url, {**base, "start_time": "13:00", "end_time": "15:00"})
@@ -1508,9 +1587,14 @@ class AttendanceMultipleRecordTests(TestCase):
         self.client.post(
             reverse("shift:attendance_summary", args=[self.group.id]),
             {
-                "month": self.month_value, "user_id": str(self.user.id), "record_id": str(record.id),
-                "work_date": self.today.isoformat(), "start_time": "10:00", "end_time": "12:00",
-                "break_minutes": "", "note": "",
+                "month": self.month_value,
+                "user_id": str(self.user.id),
+                "record_id": str(record.id),
+                "work_date": self.today.isoformat(),
+                "start_time": "10:00",
+                "end_time": "12:00",
+                "break_minutes": "",
+                "note": "",
             },
         )
 
@@ -1550,10 +1634,16 @@ class WorkTypeTests(TestCase):
     def setUp(self):
         user_model = get_user_model()
         self.user = user_model.objects.create(
-            username="user", username_jp="ユーザー", email="user@example.com", is_active=True,
+            username="user",
+            username_jp="ユーザー",
+            email="user@example.com",
+            is_active=True,
         )
         self.admin_user = user_model.objects.create(
-            username="admin", username_jp="管理者", email="admin@example.com", is_active=True,
+            username="admin",
+            username_jp="管理者",
+            email="admin@example.com",
+            is_active=True,
         )
         self.group = Group.objects.create(name="shop", name_jp="店舗")
         self.other_group = Group.objects.create(name="other-shop", name_jp="別店舗")
@@ -1629,16 +1719,20 @@ class WorkTypeTests(TestCase):
 
     def test_inactive_work_type_cannot_be_chosen_but_existing_record_can_be_edited(self):
         record = AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=self.today,
-            start_time=time(9, 0), end_time=time(10, 0), work_type=self.office, hourly_rate=1100,
+            group=self.group,
+            user=self.user,
+            work_date=self.today,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            work_type=self.office,
+            hourly_rate=1100,
         )
         self.office.is_active = False
         self.office.save()
         self.client.force_login(self.user)
 
         self._post_record(work_type=str(self.office.id), start_time="13:00", end_time="14:00")
-        self._post_record(record_id=str(record.id), work_type=str(self.office.id),
-                          start_time="09:00", end_time="10:30")
+        self._post_record(record_id=str(record.id), work_type=str(self.office.id), start_time="09:00", end_time="10:30")
 
         self.assertEqual(AttendanceRecord.objects.filter(user=self.user).count(), 1)
         record.refresh_from_db()
@@ -1668,8 +1762,13 @@ class WorkTypeTests(TestCase):
 
     def test_rate_change_does_not_affect_registered_records(self):
         record = AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=self.today,
-            start_time=time(9, 0), end_time=time(10, 0), work_type=self.lesson, hourly_rate=1500,
+            group=self.group,
+            user=self.user,
+            work_date=self.today,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            work_type=self.lesson,
+            hourly_rate=1500,
         )
         self.client.force_login(self.admin_user)
 
@@ -1682,21 +1781,38 @@ class WorkTypeTests(TestCase):
 
     def test_rate_change_can_be_applied_from_a_date(self):
         old = AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=self.today - timedelta(days=40),
-            start_time=time(9, 0), end_time=time(10, 0), work_type=self.lesson, hourly_rate=1500,
+            group=self.group,
+            user=self.user,
+            work_date=self.today - timedelta(days=40),
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            work_type=self.lesson,
+            hourly_rate=1500,
         )
         new = AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=self.today,
-            start_time=time(9, 0), end_time=time(10, 0), work_type=self.lesson, hourly_rate=1500,
+            group=self.group,
+            user=self.user,
+            work_date=self.today,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            work_type=self.lesson,
+            hourly_rate=1500,
         )
         other_type = AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=self.today,
-            start_time=time(13, 0), end_time=time(14, 0), work_type=self.office, hourly_rate=1100,
+            group=self.group,
+            user=self.user,
+            work_date=self.today,
+            start_time=time(13, 0),
+            end_time=time(14, 0),
+            work_type=self.office,
+            hourly_rate=1100,
         )
         self.client.force_login(self.admin_user)
 
         self._post_work_type(
-            work_type_id=str(self.lesson.id), name="授業", hourly_rate="1600",
+            work_type_id=str(self.lesson.id),
+            name="授業",
+            hourly_rate="1600",
             apply_from=(self.today - timedelta(days=7)).isoformat(),
         )
 
@@ -1709,18 +1825,27 @@ class WorkTypeTests(TestCase):
 
     def test_editing_a_record_keeps_its_rate_unless_the_work_type_changes(self):
         record = AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=self.today,
-            start_time=time(9, 0), end_time=time(10, 0), work_type=self.lesson, hourly_rate=1400,
+            group=self.group,
+            user=self.user,
+            work_date=self.today,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            work_type=self.lesson,
+            hourly_rate=1400,
         )
         self.client.force_login(self.user)
 
-        self._post_record(record_id=str(record.id), work_type=str(self.lesson.id),
-                          start_time="09:00", end_time="10:00", note="メモだけ変更")
+        self._post_record(
+            record_id=str(record.id),
+            work_type=str(self.lesson.id),
+            start_time="09:00",
+            end_time="10:00",
+            note="メモだけ変更",
+        )
         record.refresh_from_db()
         self.assertEqual(record.hourly_rate, 1400)
 
-        self._post_record(record_id=str(record.id), work_type=str(self.office.id),
-                          start_time="09:00", end_time="10:00")
+        self._post_record(record_id=str(record.id), work_type=str(self.office.id), start_time="09:00", end_time="10:00")
         record.refresh_from_db()
         self.assertEqual(record.hourly_rate, 1100)
 
@@ -1728,12 +1853,22 @@ class WorkTypeTests(TestCase):
 
     def test_attendance_page_shows_amounts_by_work_type(self):
         AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=self.today,
-            start_time=time(9, 0), end_time=time(11, 0), work_type=self.lesson, hourly_rate=1500,
+            group=self.group,
+            user=self.user,
+            work_date=self.today,
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            work_type=self.lesson,
+            hourly_rate=1500,
         )
         AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=self.today,
-            start_time=time(13, 0), end_time=time(14, 30), work_type=self.office, hourly_rate=1100,
+            group=self.group,
+            user=self.user,
+            work_date=self.today,
+            start_time=time(13, 0),
+            end_time=time(14, 30),
+            work_type=self.office,
+            hourly_rate=1100,
         )
         self.client.force_login(self.user)
 
@@ -1753,12 +1888,22 @@ class WorkTypeTests(TestCase):
 
     def test_summary_shows_totals_and_breakdown(self):
         AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=self.today,
-            start_time=time(9, 0), end_time=time(11, 0), work_type=self.lesson, hourly_rate=1500,
+            group=self.group,
+            user=self.user,
+            work_date=self.today,
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+            work_type=self.lesson,
+            hourly_rate=1500,
         )
         AttendanceRecord.objects.create(
-            group=self.group, user=self.admin_user, work_date=self.today,
-            start_time=time(13, 0), end_time=time(14, 0), work_type=self.office, hourly_rate=1100,
+            group=self.group,
+            user=self.admin_user,
+            work_date=self.today,
+            start_time=time(13, 0),
+            end_time=time(14, 0),
+            work_type=self.office,
+            hourly_rate=1100,
         )
         self.client.force_login(self.admin_user)
 
@@ -1808,8 +1953,13 @@ class WorkTypeTests(TestCase):
 
     def test_unused_work_type_can_be_deleted_but_used_one_cannot(self):
         AttendanceRecord.objects.create(
-            group=self.group, user=self.user, work_date=self.today,
-            start_time=time(9, 0), end_time=time(10, 0), work_type=self.lesson, hourly_rate=1500,
+            group=self.group,
+            user=self.user,
+            work_date=self.today,
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            work_type=self.lesson,
+            hourly_rate=1500,
         )
         self.client.force_login(self.admin_user)
 
@@ -1826,13 +1976,22 @@ class AttendanceCsvTests(TestCase):
     def setUp(self):
         user_model = get_user_model()
         self.user = user_model.objects.create(
-            username="user", username_jp="山田 花子", email="user@example.com", is_active=True,
+            username="user",
+            username_jp="山田 花子",
+            email="user@example.com",
+            is_active=True,
         )
         self.admin_user = user_model.objects.create(
-            username="admin", username_jp="管理 太郎", email="admin@example.com", is_active=True,
+            username="admin",
+            username_jp="管理 太郎",
+            email="admin@example.com",
+            is_active=True,
         )
         self.outsider = user_model.objects.create(
-            username="outsider", username_jp="外部", email="outsider@example.com", is_active=True,
+            username="outsider",
+            username_jp="外部",
+            email="outsider@example.com",
+            is_active=True,
         )
         self.group = Group.objects.create(name="shop", name_jp="店舗")
         self.other_group = Group.objects.create(name="other-shop", name_jp="別店舗")
@@ -1847,7 +2006,12 @@ class AttendanceCsvTests(TestCase):
 
     def _create(self, user, day, start, end, work_type=None, group=None, **kwargs):
         record = AttendanceRecord(
-            group=group or self.group, user=user, work_date=day, start_time=start, end_time=end, **kwargs,
+            group=group or self.group,
+            user=user,
+            work_date=day,
+            start_time=start,
+            end_time=end,
+            **kwargs,
         )
         record.apply_work_type(work_type)
         record.save()
@@ -1885,16 +2049,47 @@ class AttendanceCsvTests(TestCase):
         self.assertTrue(response.content.startswith("\ufeff".encode("utf-8")))
         self.assertIn("attachment;", response["Content-Disposition"])
         self.assertIn(self.month_first.strftime("%Y-%m"), response["Content-Disposition"])
-        self.assertEqual(rows[0], [
-            "勤務日", "曜日", "ユーザー名", "氏名", "仕事内容", "出勤時刻", "退勤時刻", "日またぎ",
-            "休憩（分）", "実働（時:分）", "実働（分）", "時給（円）", "金額（円）", "入力方法", "メモ",
-        ])
+        self.assertEqual(
+            rows[0],
+            [
+                "勤務日",
+                "曜日",
+                "ユーザー名",
+                "氏名",
+                "仕事内容",
+                "出勤時刻",
+                "退勤時刻",
+                "日またぎ",
+                "休憩（分）",
+                "実働（時:分）",
+                "実働（分）",
+                "時給（円）",
+                "金額（円）",
+                "入力方法",
+                "メモ",
+            ],
+        )
         self.assertEqual(len(rows), 3)
         day = self.month_first.isoformat()
         self.assertEqual(rows[1][0], day)
-        self.assertEqual(rows[1][2:], [
-            "user", "山田 花子", "授業", "09:00", "12:00", "", "0", "3:00", "180", "1500", "4500", "手動入力", "午前",
-        ])
+        self.assertEqual(
+            rows[1][2:],
+            [
+                "user",
+                "山田 花子",
+                "授業",
+                "09:00",
+                "12:00",
+                "",
+                "0",
+                "3:00",
+                "180",
+                "1500",
+                "4500",
+                "手動入力",
+                "午前",
+            ],
+        )
         self.assertEqual(rows[2][4:13], ["事務", "22:00", "01:30", "○", "30", "3:00", "180", "1100", "3300"])
 
     def test_records_csv_leaves_working_record_blank(self):
@@ -1914,10 +2109,21 @@ class AttendanceCsvTests(TestCase):
 
         _response, rows = self._download("members")
 
-        self.assertEqual(rows[0], [
-            "ユーザー名", "氏名", "勤務日数", "実働（時:分）", "実働（分）", "金額（円）",
-            "授業 実働（分）", "授業 金額（円）", "事務 実働（分）", "事務 金額（円）",
-        ])
+        self.assertEqual(
+            rows[0],
+            [
+                "ユーザー名",
+                "氏名",
+                "勤務日数",
+                "実働（時:分）",
+                "実働（分）",
+                "金額（円）",
+                "授業 実働（分）",
+                "授業 金額（円）",
+                "事務 実働（分）",
+                "事務 金額（円）",
+            ],
+        )
         self.assertEqual(rows[1], ["admin", "管理 太郎", "0", "0:00", "0", "0", "0", "0", "0", "0"])
         self.assertEqual(rows[2], ["user", "山田 花子", "2", "4:30", "270", "6150", "180", "4500", "90", "1650"])
 
@@ -1957,18 +2163,25 @@ class SlackNotificationTests(TestCase):
     def setUp(self):
         user_model = get_user_model()
         self.member = user_model.objects.create(
-            username="slack-member", username_jp="メンバー", email="slack-member@example.com",
+            username="slack-member",
+            username_jp="メンバー",
+            email="slack-member@example.com",
             is_active=True,
         )
         self.admin_user = user_model.objects.create(
-            username="slack-admin", username_jp="管理者", email="slack-admin@example.com",
+            username="slack-admin",
+            username_jp="管理者",
+            email="slack-admin@example.com",
             is_active=True,
         )
         self.group = Group.objects.create(name="slack-shop", name_jp="通知店舗")
         UserGroup.objects.create(user=self.member, group=self.group)
         UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
         self.time_slot = TimeSlot.objects.create(
-            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0),
+            group=self.group,
+            name="早番",
+            start_time=time(9, 0),
+            end_time=time(13, 0),
         )
         self.url = reverse("shift:slack_settings", args=[self.group.id])
 
@@ -1976,7 +2189,8 @@ class SlackNotificationTests(TestCase):
         defaults = {"is_enabled": True, "webhook_url": self.WEBHOOK_URL}
         defaults.update(overrides)
         setting, _created = SlackNotificationSetting.objects.update_or_create(
-            group=self.group, defaults=defaults,
+            group=self.group,
+            defaults=defaults,
         )
         return setting
 
@@ -1990,13 +2204,16 @@ class SlackNotificationTests(TestCase):
     def test_admin_can_save_webhook_url(self):
         self.client.force_login(self.admin_user)
 
-        response = self.client.post(self.url, {
-            "action": "save",
-            "is_enabled": "on",
-            "webhook_url": self.WEBHOOK_URL,
-            "notify_deadline_reminder": "on",
-            "reminder_days_before": "3",
-        })
+        response = self.client.post(
+            self.url,
+            {
+                "action": "save",
+                "is_enabled": "on",
+                "webhook_url": self.WEBHOOK_URL,
+                "notify_deadline_reminder": "on",
+                "reminder_days_before": "3",
+            },
+        )
 
         self.assertEqual(response.status_code, 302)
         setting = SlackNotificationSetting.objects.get(group=self.group)
@@ -2006,9 +2223,15 @@ class SlackNotificationTests(TestCase):
     def test_enabling_without_webhook_url_is_rejected(self):
         self.client.force_login(self.admin_user)
 
-        self.client.post(self.url, {
-            "action": "save", "is_enabled": "on", "webhook_url": "", "reminder_days_before": "3",
-        })
+        self.client.post(
+            self.url,
+            {
+                "action": "save",
+                "is_enabled": "on",
+                "webhook_url": "",
+                "reminder_days_before": "3",
+            },
+        )
 
         self.assertFalse(SlackNotificationSetting.objects.get(group=self.group).is_enabled)
 
@@ -2016,10 +2239,15 @@ class SlackNotificationTests(TestCase):
         self._enable_slack()
         self.client.force_login(self.admin_user)
 
-        response = self.client.post(self.url, {
-            "action": "save", "is_enabled": "on",
-            "webhook_url": "https://example.com/hook", "reminder_days_before": "3",
-        })
+        response = self.client.post(
+            self.url,
+            {
+                "action": "save",
+                "is_enabled": "on",
+                "webhook_url": "https://example.com/hook",
+                "reminder_days_before": "3",
+            },
+        )
 
         # 入力エラーで差し戻されても、状態表示は保存済みの内容のまま
         self.assertEqual(response.status_code, 200)
@@ -2029,10 +2257,15 @@ class SlackNotificationTests(TestCase):
     def test_non_slack_webhook_url_is_rejected(self):
         self.client.force_login(self.admin_user)
 
-        self.client.post(self.url, {
-            "action": "save", "is_enabled": "on",
-            "webhook_url": "https://example.com/hook", "reminder_days_before": "3",
-        })
+        self.client.post(
+            self.url,
+            {
+                "action": "save",
+                "is_enabled": "on",
+                "webhook_url": "https://example.com/hook",
+                "reminder_days_before": "3",
+            },
+        )
 
         self.assertEqual(SlackNotificationSetting.objects.get(group=self.group).webhook_url, "")
 
@@ -2040,10 +2273,16 @@ class SlackNotificationTests(TestCase):
         self._enable_slack()
         self.client.force_login(self.admin_user)
 
-        self.client.post(self.url, {
-            "action": "save", "is_enabled": "on", "webhook_url": "",
-            "mention": "<!here>", "reminder_days_before": "5",
-        })
+        self.client.post(
+            self.url,
+            {
+                "action": "save",
+                "is_enabled": "on",
+                "webhook_url": "",
+                "mention": "<!here>",
+                "reminder_days_before": "5",
+            },
+        )
 
         setting = SlackNotificationSetting.objects.get(group=self.group)
         self.assertEqual(setting.webhook_url, self.WEBHOOK_URL)
@@ -2063,9 +2302,15 @@ class SlackNotificationTests(TestCase):
         self._enable_slack()
         self.client.force_login(self.admin_user)
 
-        self.client.post(self.url, {
-            "action": "save", "webhook_url": "", "clear_webhook_url": "on", "reminder_days_before": "3",
-        })
+        self.client.post(
+            self.url,
+            {
+                "action": "save",
+                "webhook_url": "",
+                "clear_webhook_url": "on",
+                "reminder_days_before": "3",
+            },
+        )
 
         setting = SlackNotificationSetting.objects.get(group=self.group)
         self.assertEqual(setting.webhook_url, "")
@@ -2077,14 +2322,17 @@ class SlackNotificationTests(TestCase):
 
         with mock.patch("shift.slack.WebhookClient") as webhook_client:
             webhook_client.return_value.send.return_value = mock.Mock(status_code=200, body="ok")
-            response = self.client.post(self.url, {
-                "action": "request",
-                "period_start": "2026-06-01",
-                "period_end": "2026-06-30",
-                "deadline_date": "2026-05-25",
-                "message": "早めにお願いします",
-                "include_unsubmitted": "on",
-            })
+            response = self.client.post(
+                self.url,
+                {
+                    "action": "request",
+                    "period_start": "2026-06-01",
+                    "period_end": "2026-06-30",
+                    "deadline_date": "2026-05-25",
+                    "message": "早めにお願いします",
+                    "include_unsubmitted": "on",
+                },
+            )
 
         self.assertEqual(response.status_code, 302)
         webhook_client.assert_called_once_with(self.WEBHOOK_URL, timeout=slack.SEND_TIMEOUT_SECONDS)
@@ -2099,9 +2347,14 @@ class SlackNotificationTests(TestCase):
         self.client.force_login(self.admin_user)
 
         with mock.patch("shift.slack.WebhookClient") as webhook_client:
-            self.client.post(self.url, {
-                "action": "request", "period_start": "2026-06-01", "period_end": "2026-06-30",
-            })
+            self.client.post(
+                self.url,
+                {
+                    "action": "request",
+                    "period_start": "2026-06-01",
+                    "period_end": "2026-06-30",
+                },
+            )
 
         webhook_client.assert_not_called()
 
@@ -2109,16 +2362,24 @@ class SlackNotificationTests(TestCase):
         self._enable_slack(notify_shift_confirmed=True)
         today = timezone.now().date()
         ShiftEntry.objects.create(
-            group=self.group, user=self.member, work_date=today,
-            time_slot=self.time_slot, status=ShiftEntry.AVAILABLE, is_draft=True,
+            group=self.group,
+            user=self.member,
+            work_date=today,
+            time_slot=self.time_slot,
+            status=ShiftEntry.AVAILABLE,
+            is_draft=True,
         )
         self.client.force_login(self.member)
 
         with mock.patch("shift.slack.WebhookClient") as webhook_client:
             webhook_client.return_value.send.return_value = mock.Mock(status_code=200, body="ok")
-            self.client.post(reverse("shift:shift_confirm", args=[self.group.id]), {
-                "date_from": today.isoformat(), "date_to": today.isoformat(),
-            })
+            self.client.post(
+                reverse("shift:shift_confirm", args=[self.group.id]),
+                {
+                    "date_from": today.isoformat(),
+                    "date_to": today.isoformat(),
+                },
+            )
 
         self.assertEqual(webhook_client.return_value.send.call_count, 1)
         text = webhook_client.return_value.send.call_args.kwargs["attachments"][0]["text"]
@@ -2128,15 +2389,23 @@ class SlackNotificationTests(TestCase):
         self._enable_slack(notify_shift_confirmed=False)
         today = timezone.now().date()
         ShiftEntry.objects.create(
-            group=self.group, user=self.member, work_date=today,
-            time_slot=self.time_slot, status=ShiftEntry.AVAILABLE, is_draft=True,
+            group=self.group,
+            user=self.member,
+            work_date=today,
+            time_slot=self.time_slot,
+            status=ShiftEntry.AVAILABLE,
+            is_draft=True,
         )
         self.client.force_login(self.member)
 
         with mock.patch("shift.slack.WebhookClient") as webhook_client:
-            self.client.post(reverse("shift:shift_confirm", args=[self.group.id]), {
-                "date_from": today.isoformat(), "date_to": today.isoformat(),
-            })
+            self.client.post(
+                reverse("shift:shift_confirm", args=[self.group.id]),
+                {
+                    "date_from": today.isoformat(),
+                    "date_to": today.isoformat(),
+                },
+            )
 
         webhook_client.assert_not_called()
 
@@ -2146,13 +2415,16 @@ class SlackNotificationTests(TestCase):
 
         with mock.patch("shift.slack.WebhookClient") as webhook_client:
             webhook_client.return_value.send.return_value = mock.Mock(status_code=200, body="ok")
-            self.client.post(reverse("shift:schedule_settings", args=[self.group.id]), {
-                "action": "deadline",
-                "period_start": "2026-07-01",
-                "period_end": "2026-07-31",
-                "deadline_date": "2026-06-25",
-                "note": "",
-            })
+            self.client.post(
+                reverse("shift:schedule_settings", args=[self.group.id]),
+                {
+                    "action": "deadline",
+                    "period_start": "2026-07-01",
+                    "period_end": "2026-07-31",
+                    "deadline_date": "2026-06-25",
+                    "note": "",
+                },
+            )
 
         deadline = ShiftDeadline.objects.get(group=self.group, period_start=date(2026, 7, 1))
         self.assertIsNone(deadline.reminder_sent_at)
@@ -2160,18 +2432,20 @@ class SlackNotificationTests(TestCase):
 
     def test_schedule_change_notifies(self):
         self._enable_slack(notify_schedule_changed=True)
-        schedule_type = OpeningScheduleType.objects.create(group=self.group, name="休校",
-                                                           blocks_shift_input=True)
+        schedule_type = OpeningScheduleType.objects.create(group=self.group, name="休校", blocks_shift_input=True)
         self.client.force_login(self.admin_user)
 
         with mock.patch("shift.slack.WebhookClient") as webhook_client:
             webhook_client.return_value.send.return_value = mock.Mock(status_code=200, body="ok")
-            self.client.post(reverse("shift:schedule_settings", args=[self.group.id]), {
-                "action": "schedule_date",
-                "work_date": "2026-07-10",
-                "schedule_type": str(schedule_type.id),
-                "note": "",
-            })
+            self.client.post(
+                reverse("shift:schedule_settings", args=[self.group.id]),
+                {
+                    "action": "schedule_date",
+                    "work_date": "2026-07-10",
+                    "schedule_type": str(schedule_type.id),
+                    "note": "",
+                },
+            )
 
         text = webhook_client.return_value.send.call_args.kwargs["attachments"][0]["text"]
         self.assertIn("休校", text)
@@ -2183,9 +2457,13 @@ class SlackNotificationTests(TestCase):
 
         with mock.patch("shift.slack.WebhookClient") as webhook_client:
             webhook_client.return_value.send.side_effect = RuntimeError("boom")
-            response = self.client.post(self.url, {
-                "action": "test",
-            }, follow=True)
+            response = self.client.post(
+                self.url,
+                {
+                    "action": "test",
+                },
+                follow=True,
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Slackへの送信に失敗しました")
@@ -2199,14 +2477,19 @@ class SlackReminderCommandTests(TestCase):
     def setUp(self):
         user_model = get_user_model()
         self.member = user_model.objects.create(
-            username="reminder-member", username_jp="メンバー",
-            email="reminder-member@example.com", is_active=True,
+            username="reminder-member",
+            username_jp="メンバー",
+            email="reminder-member@example.com",
+            is_active=True,
         )
         self.group = Group.objects.create(name="reminder-shop", name_jp="リマインド店舗")
         UserGroup.objects.create(user=self.member, group=self.group)
         self.setting = SlackNotificationSetting.objects.create(
-            group=self.group, is_enabled=True, webhook_url=self.WEBHOOK_URL,
-            notify_deadline_reminder=True, reminder_days_before=3,
+            group=self.group,
+            is_enabled=True,
+            webhook_url=self.WEBHOOK_URL,
+            notify_deadline_reminder=True,
+            reminder_days_before=3,
         )
 
     def _deadline(self, days_ahead):

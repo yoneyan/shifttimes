@@ -304,9 +304,13 @@ def cancel_subscription(request, group_id):
         return render(request, "error.html", {"text": "解約処理に失敗しました。時間をおいて再度お試しください。"})
 
     _sync_subscription(group, updated)
-    return render(request, "done.html", {
-        "text": "サブスクリプションの解約を受け付けました。現在の請求期間の終了日までご利用いただけます。",
-    })
+    return render(
+        request,
+        "done.html",
+        {
+            "text": "サブスクリプションの解約を受け付けました。現在の請求期間の終了日までご利用いただけます。",
+        },
+    )
 
 
 @login_required
@@ -353,9 +357,13 @@ def customer_portal(request, group_id):
             return_url=settings.SITE_URL + reverse("custom_auth_group:billing", args=[group_id]),
         )
     except stripe.error.StripeError:
-        return render(request, "error.html", {
-            "text": "カスタマーポータルを開けませんでした。時間をおいて再度お試しください。",
-        })
+        return render(
+            request,
+            "error.html",
+            {
+                "text": "カスタマーポータルを開けませんでした。時間をおいて再度お試しください。",
+            },
+        )
 
     return redirect(session.url, permanent=False)
 

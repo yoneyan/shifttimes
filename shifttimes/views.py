@@ -24,12 +24,14 @@ def index(request):
     admin_group_ids = {membership.group_id for membership in memberships if membership.is_admin}
 
     group_cards = [
-        {"group": membership.group, "is_admin": membership.group_id in admin_group_ids}
-        for membership in memberships
+        {"group": membership.group, "is_admin": membership.group_id in admin_group_ids} for membership in memberships
     ]
 
     total_draft_count = ShiftEntry.objects.filter(
-        user=user, group__usergroup__user=user, work_date__gte=today, is_draft=True,
+        user=user,
+        group__usergroup__user=user,
+        work_date__gte=today,
+        is_draft=True,
     ).count()
 
     context = {
@@ -42,7 +44,7 @@ def index(request):
 
 
 def login(request):
-    if request.method == 'POST':
+    if request.method == "POST":
         form = LoginForm(request, data=request.POST)
         if form.is_valid():
             user = form.get_user()
@@ -52,7 +54,7 @@ def login(request):
 
     else:
         form = LoginForm()
-    context = {'form': form}
+    context = {"form": form}
     return render(request, "login.html", context)
 
 

@@ -5,6 +5,7 @@ cron などから1日1回呼ぶことを想定している。1つの提出期限
 
     uv run python manage.py send_shift_reminders
 """
+
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
@@ -19,11 +20,14 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--dry-run", action="store_true",
+            "--dry-run",
+            action="store_true",
             help="送信せずに対象だけを表示する",
         )
         parser.add_argument(
-            "--group-id", type=int, default=None,
+            "--group-id",
+            type=int,
+            default=None,
             help="特定のグループだけを対象にする",
         )
 
@@ -34,14 +38,15 @@ class Command(BaseCommand):
         settings_by_group = {
             setting.group_id: setting
             for setting in SlackNotificationSetting.objects.filter(
-                is_enabled=True, notify_deadline_reminder=True,
-            ).exclude(webhook_url="").select_related("group")
+                is_enabled=True,
+                notify_deadline_reminder=True,
+            )
+            .exclude(webhook_url="")
+            .select_related("group")
         }
         if options["group_id"] is not None:
             settings_by_group = {
-                group_id: setting
-                for group_id, setting in settings_by_group.items()
-                if group_id == options["group_id"]
+                group_id: setting for group_id, setting in settings_by_group.items() if group_id == options["group_id"]
             }
         if not settings_by_group:
             self.stdout.write("リマインド対象のグループがありません。")
@@ -66,7 +71,9 @@ class Command(BaseCommand):
                 continue
 
             label = "%s（期限 %s / あと%d日）" % (
-                deadline.group.name_jp, deadline.deadline_date, days_left,
+                deadline.group.name_jp,
+                deadline.deadline_date,
+                days_left,
             )
             if dry_run:
                 self.stdout.write("[dry-run] %s" % label)

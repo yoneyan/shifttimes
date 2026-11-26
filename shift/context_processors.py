@@ -38,7 +38,9 @@ def attendance_groups(request):
 
     # スタッフでも、勤怠を入力できるのは所属しているグループだけ
     settings_query = AttendanceSetting.objects.filter(
-        is_enabled=True, group__status=ACTIVE_GROUP_STATUS, group__usergroup__user=user,
+        is_enabled=True,
+        group__status=ACTIVE_GROUP_STATUS,
+        group__usergroup__user=user,
     )
 
     return {"has_attendance_groups": settings_query.exists()}

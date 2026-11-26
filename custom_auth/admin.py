@@ -49,8 +49,7 @@ class User(SimpleHistoryAdmin):
 @admin.register(Group)
 class Group(SimpleHistoryAdmin):
     fieldsets = (
-        (None, {"fields": (
-            "name", "name_jp", "status", "comment")}),
+        (None, {"fields": ("name", "name_jp", "status", "comment")}),
         ("Membership", {"fields": ("membership_type", "membership_expired_at")}),
         (
             "無償化",
@@ -122,9 +121,7 @@ class Group(SimpleHistoryAdmin):
         "stripe_cancel_at_period_end",
     )
 
-    inlines = (
-        TermInlineGroupAdmin,
-    )
+    inlines = (TermInlineGroupAdmin,)
 
     def get_fieldsets(self, request, obj=None):
         fieldsets = super().get_fieldsets(request, obj)

@@ -21,8 +21,16 @@ class GroupManager(models.Manager):
         return self.filter(is_active=True)
 
     def create_group(
-        self, name, name_jp, postcode, address, address_jp, phone,
-        country="Japan", contract_type="E-Mail", **extra_fields
+        self,
+        name,
+        name_jp,
+        postcode,
+        address,
+        address_jp,
+        phone,
+        country="Japan",
+        contract_type="E-Mail",
+        **extra_fields,
     ):
         extra_fields.setdefault("is_pass", False)
         return self.create(
@@ -111,8 +119,7 @@ def free_plan_choices():
     """無償付与プランの選択肢を settings のプラン定義から組み立てる。"""
     choices = [("", "なし(通常の課金対象)")]
     choices += [
-        (key, f"{plan['name']} 相当(最大{plan['max_members']}名)")
-        for key, plan in settings.STRIPE_PLANS.items()
+        (key, f"{plan['name']} 相当(最大{plan['max_members']}名)") for key, plan in settings.STRIPE_PLANS.items()
     ]
     choices.append((UNLIMITED_PLAN_KEY, f"{settings.UNLIMITED_PLAN['name']} 相当(人数無制限)"))
     return choices
@@ -132,15 +139,15 @@ class Group(models.Model):  # noqa: F811
     stripe_subscription_id = models.CharField("Stripe(SubID)", max_length=200, blank=True, null=True)
     # Stripe 側の契約状態のキャッシュ。Webhook と請求画面の表示時に同期する
     stripe_plan = models.CharField("契約プラン", max_length=50, default="", blank=True)
-    stripe_status = models.CharField("契約ステータス", max_length=50, default="", blank=True,
-                                     choices=SUBSCRIPTION_STATUS_CHOICES)
+    stripe_status = models.CharField(
+        "契約ステータス", max_length=50, default="", blank=True, choices=SUBSCRIPTION_STATUS_CHOICES
+    )
     stripe_current_period_end = models.DateTimeField("現在の請求期間の終了日", blank=True, null=True)
     stripe_cancel_at_period_end = models.BooleanField("期間末に解約予定", default=False)
 
     # 無償化: 運営判断で Stripe 契約なしに有料プラン相当を付与する。
     # 期限は membership_expired_at を使う(未設定なら無期限)
-    free_plan = models.CharField("無償付与プラン", max_length=50, default="", blank=True,
-                                 choices=free_plan_choices)
+    free_plan = models.CharField("無償付与プラン", max_length=50, default="", blank=True, choices=free_plan_choices)
     free_reason = models.CharField("無償付与の理由", max_length=250, default="", blank=True)
 
     # group personal info
@@ -149,8 +156,7 @@ class Group(models.Model):  # noqa: F811
     address_jp = models.CharField("住所(Japanese)", max_length=250, default="")
     phone = models.CharField("phone", max_length=30, default="")
     country = models.CharField("居住国", max_length=100, default="Japan")
-    contract_type = models.CharField("契約種別", max_length=100, default="E-Mail",
-                                     choices=CONTRACT_TYPE_CHOICES)
+    contract_type = models.CharField("契約種別", max_length=100, default="E-Mail", choices=CONTRACT_TYPE_CHOICES)
     users = models.ManyToManyField(
         "User",
         blank=True,
@@ -298,18 +304,15 @@ class User(AbstractBaseUser):
     created_at = models.DateTimeField("作成日", default=timezone.now)
     updated_at = models.DateTimeField("更新日", default=timezone.now)
     display_name = models.CharField("display_name", max_length=150, default="", blank=True)
-    username = models.CharField("username", max_length=150, validators=[username_validator],
-                                unique=True)
-    username_jp = models.CharField("username(japanese)", max_length=150,
-                                   validators=[username_validator], unique=True)
+    username = models.CharField("username", max_length=150, validators=[username_validator], unique=True)
+    username_jp = models.CharField("username(japanese)", max_length=150, validators=[username_validator], unique=True)
     email = models.EmailField("email", unique=True)
     is_staff = models.BooleanField("管理者ステータス", default=False)
     is_active = models.BooleanField("有効", default=False)
     allow_group_add = models.BooleanField("グループ追加許可", default=True)
 
     # stripe
-    stripe_donate_customer_id = models.CharField("Stripe Donate(CusID)", max_length=200, blank=True,
-                                                 null=True)
+    stripe_donate_customer_id = models.CharField("Stripe Donate(CusID)", max_length=200, blank=True, null=True)
 
     groups = models.ManyToManyField(
         "Group",
@@ -370,16 +373,14 @@ def user_activate_expire_date():
 
 
 def email_verify_expire_date():
-    return timezone.now() + timezone.timedelta(
-        hours=settings.USER_LOGIN_VERIFY_EMAIL_EXPIRED_MINUTES)
+    return timezone.now() + timezone.timedelta(hours=settings.USER_LOGIN_VERIFY_EMAIL_EXPIRED_MINUTES)
 
 
 class UserActivateTokensManager(models.Manager):
     def activate_user_by_token(self, activate_token):
         if not self.filter(token=activate_token, expired_at__gt=timezone.now()).exists():
             raise ValueError("Token is not found......")
-        user_activate_token = self.filter(token=activate_token,
-                                          expired_at__gt=timezone.now()).first()
+        user_activate_token = self.filter(token=activate_token, expired_at__gt=timezone.now()).first()
         if user_activate_token.is_used:
             raise ValueError("this token was used...")
         if user_activate_token.user.is_active:
@@ -447,8 +448,7 @@ class UserEmailVerifyManager(models.Manager):
         if not user_id:
             raise ValueError("user_id is not found......")
         try:
-            sign_up_key = self.filter(token=token, expired_at__gt=timezone.now(),
-                                      is_used=False).first()
+            sign_up_key = self.filter(token=token, expired_at__gt=timezone.now(), is_used=False).first()
         except Exception:
             return False
         # keyがない時
@@ -488,8 +488,7 @@ class TOTPDeviceManager(models.Manager):
         otp_secret = pyotp.random_base32()
         return {
             "secret": otp_secret,
-            "url": pyotp.totp.TOTP(otp_secret).provisioning_uri(name=email,
-                                                                issuer_name=settings.APP_NAME),
+            "url": pyotp.totp.TOTP(otp_secret).provisioning_uri(name=email, issuer_name=settings.APP_NAME),
         }
 
     def create_secret(self, user=None, title="", otp_secret=""):

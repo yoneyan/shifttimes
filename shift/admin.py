@@ -16,9 +16,7 @@ from shift.models import (
 
 @admin.register(TimeSlot)
 class TimeSlotAdmin(SimpleHistoryAdmin):
-    fieldsets = (
-        (None, {"fields": ("group", "name", "start_time", "end_time", "is_active")}),
-    )
+    fieldsets = ((None, {"fields": ("group", "name", "start_time", "end_time", "is_active")}),)
     list_display = ("id", "group", "name", "start_time", "end_time", "is_active", "updated_at")
     list_filter = ("group", "is_active")
     search_fields = ("name", "group__name")
@@ -31,8 +29,7 @@ class OpeningScheduleTypeAdmin(SimpleHistoryAdmin):
         (None, {"fields": ("group", "name", "color", "blocks_shift_input", "is_active", "display_order")}),
         ("audit", {"fields": ("created_at", "updated_at")}),
     )
-    list_display = ("id", "group", "name", "color", "blocks_shift_input", "is_active", "display_order",
-                    "updated_at")
+    list_display = ("id", "group", "name", "color", "blocks_shift_input", "is_active", "display_order", "updated_at")
     list_filter = ("group", "blocks_shift_input", "is_active")
     search_fields = ("name", "group__name")
     readonly_fields = ("created_at", "updated_at")
@@ -45,8 +42,7 @@ class ShiftDeadlineAdmin(SimpleHistoryAdmin):
         ("info", {"fields": ("note", "reminder_sent_at")}),
         ("audit", {"fields": ("created_at", "updated_at")}),
     )
-    list_display = ("id", "group", "period_start", "period_end", "deadline_date", "reminder_sent_at",
-                    "updated_at")
+    list_display = ("id", "group", "period_start", "period_end", "deadline_date", "reminder_sent_at", "updated_at")
     list_filter = ("group",)
     search_fields = ("group__name", "note")
     readonly_fields = ("created_at", "updated_at")
@@ -106,12 +102,22 @@ class WorkTypeAdmin(SimpleHistoryAdmin):
 class AttendanceRecordAdmin(SimpleHistoryAdmin):
     fieldsets = (
         (None, {"fields": ("group", "user", "work_date")}),
-        ("info", {"fields": ("work_type", "hourly_rate", "start_time", "end_time", "break_minutes", "source",
-                             "note")}),
+        ("info", {"fields": ("work_type", "hourly_rate", "start_time", "end_time", "break_minutes", "source", "note")}),
         ("audit", {"fields": ("created_at", "updated_at")}),
     )
-    list_display = ("id", "group", "user", "work_date", "work_type", "start_time", "end_time", "break_minutes",
-                    "hourly_rate", "source", "updated_at")
+    list_display = (
+        "id",
+        "group",
+        "user",
+        "work_date",
+        "work_type",
+        "start_time",
+        "end_time",
+        "break_minutes",
+        "hourly_rate",
+        "source",
+        "updated_at",
+    )
     list_filter = ("group", "source", "work_type", "work_date")
     search_fields = ("user__username", "group__name", "note")
     readonly_fields = ("created_at", "updated_at")
@@ -121,13 +127,29 @@ class AttendanceRecordAdmin(SimpleHistoryAdmin):
 class SlackNotificationSettingAdmin(SimpleHistoryAdmin):
     fieldsets = (
         (None, {"fields": ("group", "is_enabled", "webhook_url", "mention")}),
-        ("notify", {"fields": ("notify_deadline_reminder", "reminder_days_before",
-                               "notify_shift_confirmed", "notify_schedule_changed")}),
+        (
+            "notify",
+            {
+                "fields": (
+                    "notify_deadline_reminder",
+                    "reminder_days_before",
+                    "notify_shift_confirmed",
+                    "notify_schedule_changed",
+                )
+            },
+        ),
         ("audit", {"fields": ("created_at", "updated_at")}),
     )
-    list_display = ("id", "group", "is_enabled", "notify_deadline_reminder", "reminder_days_before",
-                    "notify_shift_confirmed", "notify_schedule_changed", "updated_at")
-    list_filter = ("is_enabled", "notify_deadline_reminder", "notify_shift_confirmed",
-                   "notify_schedule_changed")
+    list_display = (
+        "id",
+        "group",
+        "is_enabled",
+        "notify_deadline_reminder",
+        "reminder_days_before",
+        "notify_shift_confirmed",
+        "notify_schedule_changed",
+        "updated_at",
+    )
+    list_filter = ("is_enabled", "notify_deadline_reminder", "notify_shift_confirmed", "notify_schedule_changed")
     search_fields = ("group__name", "group__name_jp")
     readonly_fields = ("created_at", "updated_at")

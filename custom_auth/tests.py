@@ -193,7 +193,10 @@ class MemberLimitTests(TestCase):
     def setUp(self):
         user_model = get_user_model()
         self.admin_user = user_model.objects.create(
-            username="admin", username_jp="管理者", email="admin@example.com", is_active=True,
+            username="admin",
+            username_jp="管理者",
+            email="admin@example.com",
+            is_active=True,
         )
         self.group = Group.objects.create(name="shop", name_jp="店舗")
         UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
@@ -233,14 +236,17 @@ class MemberLimitTests(TestCase):
         self.client.force_login(self.admin_user)
         before = self.group.member_count
 
-        response = self.client.post(self.url, {
-            "username": "newbie",
-            "username_jp": "新人",
-            "display_name": "新人",
-            "email": "newbie@example.com",
-            "password1": "verysecret-pass-1",
-            "password2": "verysecret-pass-1",
-        })
+        response = self.client.post(
+            self.url,
+            {
+                "username": "newbie",
+                "username_jp": "新人",
+                "display_name": "新人",
+                "email": "newbie@example.com",
+                "password1": "verysecret-pass-1",
+                "password2": "verysecret-pass-1",
+            },
+        )
 
         self.assertTrue(response.context["limit_reached"])
         self.assertEqual(self.group.member_count, before)
@@ -260,12 +266,20 @@ class MemberLimitTests(TestCase):
 
 TEST_PLANS = {
     "standard": {
-        "name": "Standard", "price_id": "price_standard", "amount": 1980,
-        "max_members": 30, "rank": 10, "recommended": True,
+        "name": "Standard",
+        "price_id": "price_standard",
+        "amount": 1980,
+        "max_members": 30,
+        "rank": 10,
+        "recommended": True,
     },
     "pro1": {
-        "name": "Pro 1", "price_id": "price_pro1", "amount": 4980,
-        "max_members": 100, "rank": 20, "recommended": False,
+        "name": "Pro 1",
+        "price_id": "price_pro1",
+        "amount": 4980,
+        "max_members": 100,
+        "rank": 20,
+        "recommended": False,
     },
 }
 
@@ -273,8 +287,14 @@ TEST_PLANS = {
 PERIOD_END_TS = 1793491200
 
 
-def fake_subscription(status="active", price_id="price_standard", cancel_at_period_end=False,
-                      sub_id="sub_123", customer="cus_123", period_end=PERIOD_END_TS):
+def fake_subscription(
+    status="active",
+    price_id="price_standard",
+    cancel_at_period_end=False,
+    sub_id="sub_123",
+    customer="cus_123",
+    period_end=PERIOD_END_TS,
+):
     """Stripe の Subscription オブジェクトを模したレスポンス。"""
     return {
         "id": sub_id,
@@ -283,11 +303,15 @@ def fake_subscription(status="active", price_id="price_standard", cancel_at_peri
         "cancel_at_period_end": cancel_at_period_end,
         "metadata": {},
         # API 2025-03-31 以降 current_period_end は item 側にある
-        "items": {"data": [{
-            "id": "si_1",
-            "price": {"id": price_id},
-            "current_period_end": period_end,
-        }]},
+        "items": {
+            "data": [
+                {
+                    "id": "si_1",
+                    "price": {"id": price_id},
+                    "current_period_end": period_end,
+                }
+            ]
+        },
     }
 
 
@@ -351,17 +375,22 @@ class SubscriptionSyncTests(TestCase):
         self.assertEqual(billing_views._subscription_id_from_invoice(invoice), "sub_legacy")
 
 
-@override_settings(STRIPE_PLANS=TEST_PLANS, STRIPE_SECRET_KEY="sk_test_dummy",
-                   SITE_URL="http://testserver")
+@override_settings(STRIPE_PLANS=TEST_PLANS, STRIPE_SECRET_KEY="sk_test_dummy", SITE_URL="http://testserver")
 @skipUnless(settings.BILLING_ENABLED, "ONPREMISE_MODE では課金機能が無効なため対象外")
 class BillingViewTests(TestCase):
     def setUp(self):
         user_model = get_user_model()
         self.admin_user = user_model.objects.create(
-            username="admin", username_jp="管理者", email="admin@example.com", is_active=True,
+            username="admin",
+            username_jp="管理者",
+            email="admin@example.com",
+            is_active=True,
         )
         self.member = user_model.objects.create(
-            username="member", username_jp="メンバー", email="member@example.com", is_active=True,
+            username="member",
+            username_jp="メンバー",
+            email="member@example.com",
+            is_active=True,
         )
         self.group = Group.objects.create(name="shop", name_jp="店舗")
         UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
@@ -421,8 +450,10 @@ class BillingViewTests(TestCase):
         user_model = get_user_model()
         for index in range(31):
             user = user_model.objects.create(
-                username=f"filler{index}", username_jp=f"埋め{index}",
-                email=f"filler{index}@example.com", is_active=True,
+                username=f"filler{index}",
+                username_jp=f"埋め{index}",
+                email=f"filler{index}@example.com",
+                is_active=True,
             )
             UserGroup.objects.create(user=user, group=self.group)
         self._subscribe(plan="pro1")
@@ -446,7 +477,8 @@ class BillingViewTests(TestCase):
 
         create.assert_not_called()
         self.assertRedirects(
-            response, reverse("custom_auth_group:billing", args=[self.group.id]),
+            response,
+            reverse("custom_auth_group:billing", args=[self.group.id]),
             fetch_redirect_response=False,
         )
 
@@ -539,22 +571,23 @@ class BillingViewTests(TestCase):
         self._subscribe()
         self.client.force_login(self.member)
 
-        for name in ("billing_checkout", "billing_change_plan", "billing_cancel",
-                     "billing_resume", "billing_portal"):
+        for name in ("billing_checkout", "billing_change_plan", "billing_cancel", "billing_resume", "billing_portal"):
             with self.subTest(endpoint=name):
                 response = self.client.post(
-                    reverse(f"custom_auth_group:{name}", args=[self.group.id]), {"plan": "pro1"},
+                    reverse(f"custom_auth_group:{name}", args=[self.group.id]),
+                    {"plan": "pro1"},
                 )
                 self.assertTemplateUsed(response, "error.html")
 
 
-@override_settings(STRIPE_PLANS=TEST_PLANS, STRIPE_SECRET_KEY="sk_test_dummy",
-                   STRIPE_WEBHOOK_SECRET="whsec_test")
+@override_settings(STRIPE_PLANS=TEST_PLANS, STRIPE_SECRET_KEY="sk_test_dummy", STRIPE_WEBHOOK_SECRET="whsec_test")
 @skipUnless(settings.BILLING_ENABLED, "ONPREMISE_MODE では課金機能が無効なため対象外")
 class StripeWebhookTests(TestCase):
     def setUp(self):
         self.group = Group.objects.create(
-            name="shop", name_jp="店舗", stripe_customer_id="cus_123",
+            name="shop",
+            name_jp="店舗",
+            stripe_customer_id="cus_123",
         )
         self.url = reverse("stripe_webhook")
 
@@ -578,12 +611,17 @@ class StripeWebhookTests(TestCase):
     @mock.patch("stripe.Subscription.retrieve")
     def test_checkout_completed_links_the_subscription(self, retrieve):
         retrieve.return_value = fake_subscription()
-        event = {"type": "checkout.session.completed", "data": {"object": {
-            "mode": "subscription",
-            "subscription": "sub_123",
-            "customer": "cus_123",
-            "metadata": {"group_id": str(self.group.id), "plan": "standard"},
-        }}}
+        event = {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "mode": "subscription",
+                    "subscription": "sub_123",
+                    "customer": "cus_123",
+                    "metadata": {"group_id": str(self.group.id), "plan": "standard"},
+                }
+            },
+        }
 
         response = self._post(event)
 
@@ -598,8 +636,7 @@ class StripeWebhookTests(TestCase):
         self.group.stripe_plan = "standard"
         self.group.stripe_status = "active"
         self.group.save()
-        event = {"type": "customer.subscription.updated",
-                 "data": {"object": fake_subscription(price_id="price_pro1")}}
+        event = {"type": "customer.subscription.updated", "data": {"object": fake_subscription(price_id="price_pro1")}}
 
         self._post(event)
 
@@ -611,8 +648,7 @@ class StripeWebhookTests(TestCase):
         self.group.stripe_plan = "standard"
         self.group.stripe_status = "active"
         self.group.save()
-        event = {"type": "customer.subscription.deleted",
-                 "data": {"object": fake_subscription(status="canceled")}}
+        event = {"type": "customer.subscription.deleted", "data": {"object": fake_subscription(status="canceled")}}
 
         self._post(event)
 
@@ -627,10 +663,15 @@ class StripeWebhookTests(TestCase):
         self.group.stripe_plan = "standard"
         self.group.stripe_status = "active"
         self.group.save()
-        event = {"type": "invoice.payment_failed", "data": {"object": {
-            "customer": "cus_123",
-            "parent": {"subscription_details": {"subscription": "sub_123"}},
-        }}}
+        event = {
+            "type": "invoice.payment_failed",
+            "data": {
+                "object": {
+                    "customer": "cus_123",
+                    "parent": {"subscription_details": {"subscription": "sub_123"}},
+                }
+            },
+        }
 
         self._post(event)
 
@@ -676,8 +717,7 @@ class LineLoginViewTests(TestCase):
         return self.client.session["line_oauth_state"]
 
     def _callback(self, state, code="auth-code"):
-        return self.client.get(reverse("custom_auth_line:callback"),
-                               {"code": code, "state": state})
+        return self.client.get(reverse("custom_auth_line:callback"), {"code": code, "state": state})
 
     def test_login_start_redirects_to_line_with_state(self):
         response = self.client.get(reverse("custom_auth_line:login"))
@@ -712,7 +752,9 @@ class LineLoginViewTests(TestCase):
     def test_linked_account_can_log_in(self, fetch_profile):
         LineAccount.objects.create(user=self.user, line_user_id="U0001")
         fetch_profile.return_value = {
-            "line_user_id": "U0001", "display_name": "新しい名前", "picture_url": "",
+            "line_user_id": "U0001",
+            "display_name": "新しい名前",
+            "picture_url": "",
         }
         state = self._start("custom_auth_line:login")
 
@@ -727,7 +769,9 @@ class LineLoginViewTests(TestCase):
     @mock.patch("custom_auth.line.fetch_profile")
     def test_unlinked_account_is_not_signed_up(self, fetch_profile):
         fetch_profile.return_value = {
-            "line_user_id": "U-unknown", "display_name": "未連携", "picture_url": "",
+            "line_user_id": "U-unknown",
+            "display_name": "未連携",
+            "picture_url": "",
         }
         state = self._start("custom_auth_line:login")
 
@@ -744,7 +788,9 @@ class LineLoginViewTests(TestCase):
         self.user.save()
         LineAccount.objects.create(user=self.user, line_user_id="U0001")
         fetch_profile.return_value = {
-            "line_user_id": "U0001", "display_name": "", "picture_url": "",
+            "line_user_id": "U0001",
+            "display_name": "",
+            "picture_url": "",
         }
         state = self._start("custom_auth_line:login")
 
@@ -768,7 +814,9 @@ class LineLoginViewTests(TestCase):
     def test_state_cannot_be_replayed(self, fetch_profile):
         LineAccount.objects.create(user=self.user, line_user_id="U0001")
         fetch_profile.return_value = {
-            "line_user_id": "U0001", "display_name": "", "picture_url": "",
+            "line_user_id": "U0001",
+            "display_name": "",
+            "picture_url": "",
         }
         state = self._start("custom_auth_line:login")
         self._callback(state)
@@ -791,8 +839,7 @@ class LineLoginViewTests(TestCase):
     def test_callback_reports_a_cancelled_consent(self):
         state = self._start("custom_auth_line:login")
 
-        response = self.client.get(reverse("custom_auth_line:callback"),
-                                   {"error": "access_denied", "state": state})
+        response = self.client.get(reverse("custom_auth_line:callback"), {"error": "access_denied", "state": state})
 
         self.assertContains(response, "中断されました")
 
@@ -800,7 +847,9 @@ class LineLoginViewTests(TestCase):
     def test_logged_in_user_can_link_an_account(self, fetch_profile):
         self.client.force_login(self.user)
         fetch_profile.return_value = {
-            "line_user_id": "U0001", "display_name": "たろう", "picture_url": "https://img/1",
+            "line_user_id": "U0001",
+            "display_name": "たろう",
+            "picture_url": "https://img/1",
         }
         state = self._start("custom_auth_line:link")
 
@@ -816,7 +865,9 @@ class LineLoginViewTests(TestCase):
         LineAccount.objects.create(user=self.other_user, line_user_id="U0001")
         self.client.force_login(self.user)
         fetch_profile.return_value = {
-            "line_user_id": "U0001", "display_name": "", "picture_url": "",
+            "line_user_id": "U0001",
+            "display_name": "",
+            "picture_url": "",
         }
         state = self._start("custom_auth_line:link")
 
@@ -882,9 +933,14 @@ class LineClientTests(TestCase):
 
         profile = line.fetch_profile("auth-code", "nonce-value")
 
-        self.assertEqual(profile, {
-            "line_user_id": "U0001", "display_name": "たろう", "picture_url": "https://img/1",
-        })
+        self.assertEqual(
+            profile,
+            {
+                "line_user_id": "U0001",
+                "display_name": "たろう",
+                "picture_url": "https://img/1",
+            },
+        )
         token_request, verify_request = (call.args[0] for call in urlopen.call_args_list)
         self.assertEqual(token_request.full_url, line.TOKEN_URL)
         token_body = urllib.parse.parse_qs(token_request.data.decode())

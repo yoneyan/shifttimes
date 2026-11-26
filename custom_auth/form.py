@@ -6,8 +6,7 @@ from custom_auth.models import Group, User, UserGroup
 
 class GroupAddForm(forms.Form):
     agree = forms.ChoiceField(
-        label="利用規約への同意", required=True,
-        choices=((False, "同意しない"), (True, "同意する"))
+        label="利用規約への同意", required=True, choices=((False, "同意しない"), (True, "同意する"))
     )
     name_jp = forms.CharField(label="グループ名", max_length=150, required=True)
     name = forms.CharField(label="グループ名(English)", max_length=150, required=True)
@@ -251,8 +250,7 @@ class SignUpForm(forms.Form):
     display_name = forms.CharField(label="display_name", max_length=150, required=True)
     email = forms.EmailField(label="email", max_length=150, required=True)
     password1 = forms.CharField(label="password", widget=forms.PasswordInput(), min_length=8)
-    password2 = forms.CharField(label="password(確認用)", widget=forms.PasswordInput(),
-                                min_length=8)
+    password2 = forms.CharField(label="password(確認用)", widget=forms.PasswordInput(), min_length=8)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

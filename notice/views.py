@@ -18,7 +18,8 @@ def index(request):
     unpaid_groups = []
     if settings.BILLING_ENABLED:
         unpaid_groups = [
-            ug.group for ug in request.user.usergroup_set.select_related("group").all()
+            ug.group
+            for ug in request.user.usergroup_set.select_related("group").all()
             if not ug.group.stripe_subscription_id
         ]
 
@@ -47,17 +48,24 @@ def index(request):
     # 期限が近い or 過ぎているグループ
     deadline_alerts = []
     for ug in request.user.usergroup_set.select_related("group").all():
-        dl = ShiftDeadline.objects.filter(
-            group=ug.group, period_end__gte=today,
-        ).order_by("deadline_date").first()
+        dl = (
+            ShiftDeadline.objects.filter(
+                group=ug.group,
+                period_end__gte=today,
+            )
+            .order_by("deadline_date")
+            .first()
+        )
         if dl:
             days_left = (dl.deadline_date - today).days
-            deadline_alerts.append({
-                "group": ug.group,
-                "deadline": dl,
-                "days_left": days_left,
-                "is_overdue": days_left < 0,
-            })
+            deadline_alerts.append(
+                {
+                    "group": ug.group,
+                    "deadline": dl,
+                    "days_left": days_left,
+                    "is_overdue": days_left < 0,
+                }
+            )
 
     context = {
         "notices": notices,
@@ -104,11 +112,15 @@ def manage(request):
         for notice in Notice.objects.order_by("-start_at", "-id")[:100]
     ]
 
-    return render(request, "notice/manage.html", {
-        "notice_rows": notice_rows,
-        "type1_choices": Notice.TYPE1_CHOICES,
-        "default_start_at": now,
-    })
+    return render(
+        request,
+        "notice/manage.html",
+        {
+            "notice_rows": notice_rows,
+            "type1_choices": Notice.TYPE1_CHOICES,
+            "default_start_at": now,
+        },
+    )
 
 
 @login_required

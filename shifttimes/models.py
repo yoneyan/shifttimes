@@ -7,4 +7,3 @@ class MediumTextField(models.TextField):
             return "mediumtext"
         else:
             return super().db_type(connection=connection)
-

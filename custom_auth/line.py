@@ -14,6 +14,7 @@ ID トークンの検証は LINE の ``/oauth2/v2.1/verify`` に任せる。署�
 失敗はすべて :class:`LineLoginError` にまとめる。例外のメッセージはそのまま
 画面に出すため日本語で、LINE の応答本文はログにだけ残す。
 """
+
 import json
 import logging
 import secrets
@@ -50,7 +51,7 @@ def is_enabled():
 
 def callback_url():
     """LINE Developers のコールバック URL に登録する絶対 URL"""
-    return f'{settings.SITE_URL.rstrip("/")}{reverse("custom_auth_line:callback")}'
+    return f"{settings.SITE_URL.rstrip('/')}{reverse('custom_auth_line:callback')}"
 
 
 def generate_token():

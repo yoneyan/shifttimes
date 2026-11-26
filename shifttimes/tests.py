@@ -50,9 +50,7 @@ def onpremise_mode():
     from custom_auth import group_urls
     from shifttimes import urls as root_urls
 
-    onpremise_settings = {
-        name: getattr(load_settings("true"), name) for name in ONPREMISE_SETTING_NAMES
-    }
+    onpremise_settings = {name: getattr(load_settings("true"), name) for name in ONPREMISE_SETTING_NAMES}
     restore_settings_module()
 
     def reload_all():

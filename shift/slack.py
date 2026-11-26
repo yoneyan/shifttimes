@@ -4,6 +4,7 @@
 管理者が設定した Webhook URL になる。送信に失敗しても画面の操作は止めない方針なので、
 呼び出し側には成功可否だけを返し、例外は外に出さない。
 """
+
 import logging
 
 from django.conf import settings
@@ -65,7 +66,9 @@ def send(setting, title, text, color=COLOR_INFO, mention=True):
     if response.status_code != 200:
         logger.warning(
             "Slack通知が拒否されました group=%s status=%s body=%s",
-            setting.group_id, response.status_code, response.body,
+            setting.group_id,
+            response.status_code,
+            response.body,
         )
         return False, "Slackへの送信に失敗しました（%s: %s）" % (response.status_code, response.body)
 
@@ -110,8 +113,9 @@ def _unsubmitted_line(members):
     return "未提出（%d名）: %s" % (len(members), names)
 
 
-def notify_shift_request(group, period_start, period_end, deadline_date=None,
-                         message="", include_unsubmitted=True, setting=None):
+def notify_shift_request(
+    group, period_start, period_end, deadline_date=None, message="", include_unsubmitted=True, setting=None
+):
     """「シフトを入力してください」を手動で送る"""
     setting = setting or get_setting(group)
 
@@ -122,8 +126,7 @@ def notify_shift_request(group, period_start, period_end, deadline_date=None,
         lines.append(_unsubmitted_line(unsubmitted_members(group, period_start, period_end)))
     lines.append("入力はこちら: %s" % shift_entry_url(group))
 
-    return send(setting, "[%s] シフト希望の入力をお願いします" % group.name_jp,
-                "\n".join(lines), color=COLOR_INFO)
+    return send(setting, "[%s] シフト希望の入力をお願いします" % group.name_jp, "\n".join(lines), color=COLOR_INFO)
 
 
 def notify_deadline_reminder(group, deadline, setting=None):
@@ -141,8 +144,9 @@ def notify_deadline_reminder(group, deadline, setting=None):
         "入力はこちら: %s" % shift_entry_url(group),
     ]
 
-    return send(setting, "[%s] シフト希望の提出期限が近づいています" % group.name_jp,
-                "\n".join(lines), color=COLOR_WARN)
+    return send(
+        setting, "[%s] シフト希望の提出期限が近づいています" % group.name_jp, "\n".join(lines), color=COLOR_WARN
+    )
 
 
 def notify_shift_confirmed(group, user, count, date_from, date_to, setting=None):
@@ -157,8 +161,7 @@ def notify_shift_confirmed(group, user, count, date_from, date_to, setting=None)
         count,
         summary_url(group),
     )
-    return send(setting, "[%s] シフト希望が提出されました" % group.name_jp, text,
-                color=COLOR_GOOD, mention=False)
+    return send(setting, "[%s] シフト希望が提出されました" % group.name_jp, text, color=COLOR_GOOD, mention=False)
 
 
 def notify_deadline_changed(group, deadline, created, setting=None):
@@ -190,7 +193,9 @@ def notify_schedule_changed(group, dates, schedule_type_name, setting=None):
         date_label = "、".join("%d/%d" % (d.month, d.day) for d in dates)
     else:
         date_label = "%s 〜 %s の%d日" % (
-            dates[0].strftime("%Y/%m/%d"), dates[-1].strftime("%Y/%m/%d"), len(dates),
+            dates[0].strftime("%Y/%m/%d"),
+            dates[-1].strftime("%Y/%m/%d"),
+            len(dates),
         )
 
     text = "対象日: %s\n開講区分: %s\nカレンダー: %s" % (
@@ -198,8 +203,7 @@ def notify_schedule_changed(group, dates, schedule_type_name, setting=None):
         schedule_type_name or "未設定（曜日の基本スケジュール）に戻しました",
         _absolute_url(reverse("shift:schedule_member", args=[group.id])),
     )
-    return send(setting, "[%s] 開講スケジュールが変更されました" % group.name_jp, text,
-                color=COLOR_INFO, mention=False)
+    return send(setting, "[%s] 開講スケジュールが変更されました" % group.name_jp, text, color=COLOR_INFO, mention=False)
 
 
 def notify_test(group, setting=None):
