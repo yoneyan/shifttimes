@@ -281,6 +281,32 @@ class TwoFactorLoginTests(TestCase):
         self.assertContains(response, "認証コードが一致しません")
         self.assertNotIn("_auth_user_id", self.client.session)
 
+    def test_code_cannot_be_replayed_through_a_duplicate_device(self):
+        # 修正前の二重送信などで同じシークレットのデバイスが 2 件ある状態
+        TOTPDevice.objects.create(user=self.user, title="a", secret=self.secret, is_active=True)
+        TOTPDevice.objects.create(user=self.user, title="b", secret=self.secret, is_active=True)
+        code = pyotp.TOTP(self.secret).now()
+
+        self.assertTrue(TOTPDevice.objects.check_totp(user=self.user, code=code))
+        self.assertFalse(TOTPDevice.objects.check_totp(user=self.user, code=code))
+
+    def test_duplicate_registration_is_ignored(self):
+        self._register_device()
+        self._register_device()
+
+        self.assertEqual(TOTPDevice.objects.filter(user=self.user).count(), 1)
+
+    def test_pending_login_is_discarded_after_password_change(self):
+        self._register_device()
+        self._login()
+        self.user.set_password("changed-password-123")
+        self.user.save()
+
+        response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(self.secret).now()})
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
     def test_admin_login_redirects_to_two_factor_login(self):
         self.user.is_staff = True
         self.user.save()

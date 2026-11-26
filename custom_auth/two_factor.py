@@ -13,6 +13,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth import login as user_login
 from django.shortcuts import redirect
+from django.utils.crypto import constant_time_compare
 
 from custom_auth.models import TOTPDevice
 
@@ -20,6 +21,8 @@ SESSION_USER_ID = "two_factor_user_id"
 SESSION_BACKEND = "two_factor_backend"
 SESSION_STARTED_AT = "two_factor_started_at"
 SESSION_ATTEMPTS = "two_factor_attempts"
+# 1 要素目の時点の認証ハッシュ。確認待ちの間にパスワードが変わったら破棄する
+SESSION_AUTH_HASH = "two_factor_auth_hash"
 
 # パスワード確認から認証コード入力までの猶予
 TIMEOUT_SECONDS = 5 * 60
@@ -35,7 +38,7 @@ def is_required(user):
 
 
 def clear(request):
-    for key in (SESSION_USER_ID, SESSION_BACKEND, SESSION_STARTED_AT, SESSION_ATTEMPTS):
+    for key in (SESSION_USER_ID, SESSION_BACKEND, SESSION_STARTED_AT, SESSION_ATTEMPTS, SESSION_AUTH_HASH):
         request.session.pop(key, None)
 
 
@@ -51,6 +54,7 @@ def login_or_verify(request, user, backend=None):
     request.session[SESSION_BACKEND] = backend
     request.session[SESSION_STARTED_AT] = time.time()
     request.session[SESSION_ATTEMPTS] = 0
+    request.session[SESSION_AUTH_HASH] = user.get_session_auth_hash()
     return redirect("login_verify")
 
 
@@ -64,8 +68,11 @@ def pending_user(request):
         clear(request)
         return None
     user = get_user_model().objects.filter(pk=user_id, is_active=True).first()
-    if user is None:
+    auth_hash = request.session.get(SESSION_AUTH_HASH) or ""
+    if user is None or not constant_time_compare(auth_hash, user.get_session_auth_hash()):
+        # 確認待ちの間にパスワードが変更された場合は、変更前の認証で始めたログインを完了させない
         clear(request)
+        return None
     return user
 
 

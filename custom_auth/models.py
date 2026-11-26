@@ -494,6 +494,9 @@ class TOTPDeviceManager(models.Manager):
     def create_secret(self, user=None, title="", otp_secret=""):
         if not user:
             raise ValueError("user_id is not found......")
+        # 二重送信などで同じシークレットのデバイスが複数できないようにする
+        if self.filter(user=user, secret=otp_secret).exists():
+            return
         self.create(title=title, user=user, secret=otp_secret, is_active=True)
 
     def active(self, user):
@@ -514,8 +517,10 @@ class TOTPDeviceManager(models.Manager):
             if not totp.verify(code, for_time=now):
                 continue
             step = totp.timecode(now)
+            # 同じシークレットのデバイスが複数あっても、1 つの UPDATE でまとめて使用済みにする
+            # （1 件だけ記録すると、残りのデバイス経由で同じコードを再利用できてしまう）
             consumed = (
-                self.filter(id=device.id)
+                self.filter(user=user, secret=device.secret)
                 .filter(models.Q(last_used_step__isnull=True) | models.Q(last_used_step__lt=step))
                 .update(last_used_step=step)
             )
