@@ -33,7 +33,10 @@ COPY shift/ /opt/app/shift/
 # NGINX
 RUN python manage.py collectstatic --noinput && \
     ln -s /opt/app/static /var/www/html/static
+COPY files/nginx.conf /etc/nginx/nginx.conf
 COPY files/default.conf /etc/nginx/sites-enabled/default
+# 設定の誤りはイメージのビルド時点で検出する
+RUN nginx -t
 
 #EXPOSE 80
 EXPOSE 8010

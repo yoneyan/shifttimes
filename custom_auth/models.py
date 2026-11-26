@@ -496,17 +496,32 @@ class TOTPDeviceManager(models.Manager):
             raise ValueError("user_id is not found......")
         self.create(title=title, user=user, secret=otp_secret, is_active=True)
 
+    def active(self, user):
+        """ログインの認証に使えるデバイス（管理画面で無効化したものは除く）"""
+        return self.filter(user=user, is_active=True)
+
     def check_totp(self, user=None, code=""):
+        """有効なデバイスのいずれかでコードが一致すれば True
+
+        一度受け付けたコードは同じ時間枠の間も再利用させない（盗み見たコードでの再ログイン対策）。
+        使用済みの時間枠は条件付き UPDATE で記録するので、同時に送られても受け付けるのは 1 回だけ。
+        """
         if not user:
             raise ValueError("user_id is not found......")
-        totp_array = self.filter(user=user)
-        verify_code = False
-        for totp_array_one in totp_array:
-            totp = pyotp.TOTP(totp_array_one.secret)
-            verify_code = totp.verify(code)
-            if verify_code:
-                break
-        return verify_code
+        now = timezone.now()
+        for device in self.active(user):
+            totp = pyotp.TOTP(device.secret)
+            if not totp.verify(code, for_time=now):
+                continue
+            step = totp.timecode(now)
+            consumed = (
+                self.filter(id=device.id)
+                .filter(models.Q(last_used_step__isnull=True) | models.Q(last_used_step__lt=step))
+                .update(last_used_step=step)
+            )
+            if consumed:
+                return True
+        return False
 
     def list(self, user=None):
         if not user:
@@ -525,6 +540,8 @@ class TOTPDevice(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     secret = models.CharField("secret", max_length=100)
     is_active = models.BooleanField("有効", default=False)
+    # 最後にログインで受け付けたコードの時間枠（30 秒単位）。同じコードの再利用を防ぐ
+    last_used_step = models.BigIntegerField("最終使用の時間枠", blank=True, null=True)
 
     objects = TOTPDeviceManager()
 

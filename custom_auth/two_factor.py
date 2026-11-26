@@ -31,7 +31,7 @@ DEFAULT_BACKEND = "django.contrib.auth.backends.ModelBackend"
 
 def is_required(user):
     """ログイン時に認証コードの入力が必要か"""
-    return TOTPDevice.objects.filter(user=user).exists()
+    return TOTPDevice.objects.active(user).exists()
 
 
 def clear(request):

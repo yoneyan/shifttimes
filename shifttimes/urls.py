@@ -12,6 +12,7 @@ Class-based views
     2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
 Including another URLconf
     1. Import the include() function: from django.urls import include, path
+from django.views.generic import RedirectView
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
@@ -19,6 +20,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import RedirectView
 
 from custom_auth.billing_views import stripe_webhook
 from custom_auth.views import activate_user
@@ -36,6 +38,8 @@ urlpatterns = [
     path("profile/", include("custom_auth.urls")),
     path("line/", include("custom_auth.line_urls")),
     path("group/", include("custom_auth.group_urls")),
+    # 管理画面の標準ログインは 2 要素認証を通らないため使わせず、通常のログイン画面へ回す
+    path("admin/login/", RedirectView.as_view(pattern_name="login", query_string=False)),
     path("admin/", admin.site.urls),
 ]
 

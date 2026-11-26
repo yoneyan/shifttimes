@@ -253,6 +253,44 @@ class TwoFactorLoginTests(TestCase):
         self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
         self.assertNotIn("_auth_user_id", self.client.session)
 
+    def test_code_cannot_be_replayed_in_the_same_time_step(self):
+        self._register_device()
+        code = pyotp.TOTP(self.secret).now()
+        self._login()
+        self.client.post(reverse("login_verify"), {"token": code})
+        self.assertIn("_auth_user_id", self.client.session)
+
+        # 盗み見た同じコードで別のセッションからログインしようとしても通らない
+        other = self.client_class()
+        other.post(reverse("login"), {"username": "totp-user", "password": self.password})
+        response = other.post(reverse("login_verify"), {"token": code})
+
+        self.assertContains(response, "認証コードが一致しません")
+        self.assertNotIn("_auth_user_id", other.session)
+
+    def test_inactive_device_is_not_accepted(self):
+        active_secret = pyotp.random_base32()
+        TOTPDevice.objects.create(user=self.user, title="new", secret=active_secret, is_active=True)
+        TOTPDevice.objects.create(user=self.user, title="lost", secret=self.secret, is_active=False)
+        self._login()
+
+        response = self.client.post(reverse("login_verify"), {"token": pyotp.TOTP(self.secret).now()})
+
+        if pyotp.TOTP(active_secret).now() == pyotp.TOTP(self.secret).now():
+            self.skipTest("偶然 2 つのデバイスのコードが一致した")
+        self.assertContains(response, "認証コードが一致しません")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_admin_login_redirects_to_two_factor_login(self):
+        self.user.is_staff = True
+        self.user.save()
+        self._register_device()
+
+        response = self.client.post("/admin/login/", {"username": "totp-user", "password": self.password})
+
+        self.assertRedirects(response, reverse("login"), fetch_redirect_response=False)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
     def test_verify_page_without_password_step_redirects_to_login(self):
         response = self.client.get(reverse("login_verify"))
 
