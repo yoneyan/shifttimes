@@ -8,6 +8,7 @@
 勤怠は同じ日に何件でも登録できる（時間帯が重なるものは不可）。
 管理者が仕事内容と時給を用意すると、勤怠ごとに仕事内容を選び、実働時間 × 時給で金額を出す。
 """
+
 import csv
 from collections import defaultdict
 from datetime import timedelta
@@ -76,10 +77,7 @@ def _attendance_setting(group):
 
 def _enabled_group_ids(groups):
     """勤怠管理が有効になっているグループの id 集合"""
-    return set(
-        AttendanceSetting.objects.filter(group__in=groups, is_enabled=True)
-        .values_list("group_id", flat=True)
-    )
+    return set(AttendanceSetting.objects.filter(group__in=groups, is_enabled=True).values_list("group_id", flat=True))
 
 
 def _work_type_context(group):
@@ -95,7 +93,10 @@ def _month_records(group, user, month_from, month_to):
     """指定月の勤怠実績（日付・出勤時刻順）"""
     return list(
         AttendanceRecord.objects.filter(
-            group=group, user=user, work_date__gte=month_from, work_date__lte=month_to,
+            group=group,
+            user=user,
+            work_date__gte=month_from,
+            work_date__lte=month_to,
         ).select_related("work_type")
     )
 
@@ -127,11 +128,14 @@ def _month_totals(records):
         if not minutes:
             continue
         total_minutes += minutes
-        item = breakdown.setdefault(record.work_type_id, {
-            "work_type": record.work_type,
-            "minutes": 0,
-            "amount": None,
-        })
+        item = breakdown.setdefault(
+            record.work_type_id,
+            {
+                "work_type": record.work_type,
+                "minutes": 0,
+                "amount": None,
+            },
+        )
         item["minutes"] += minutes
         amount = record.amount
         if amount is not None:
@@ -227,7 +231,9 @@ def attendance_index(request):
     today = _today()
     today_records = defaultdict(list)
     for record in AttendanceRecord.objects.filter(
-        group__in=enabled_groups, user=request.user, work_date=today,
+        group__in=enabled_groups,
+        user=request.user,
+        work_date=today,
     ):
         today_records[record.group_id].append(record)
 
@@ -235,17 +241,23 @@ def attendance_index(request):
     for group in enabled_groups:
         records = today_records.get(group.id, [])
         worked_minutes = sum(record.worked_minutes or 0 for record in records)
-        group_cards.append({
-            "group": group,
-            "open_record": next((record for record in records if record.is_working), None),
-            "worked_display": minutes_to_hhmm(worked_minutes) if worked_minutes else "",
-            "url": reverse("shift:attendance", args=[group.id]),
-        })
-    return render(request, "shift/attendance_index.html", {
-        "group_cards": group_cards,
-        "today": today,
-        "has_disabled_groups": len(groups) > len(enabled_groups),
-    })
+        group_cards.append(
+            {
+                "group": group,
+                "open_record": next((record for record in records if record.is_working), None),
+                "worked_display": minutes_to_hhmm(worked_minutes) if worked_minutes else "",
+                "url": reverse("shift:attendance", args=[group.id]),
+            }
+        )
+    return render(
+        request,
+        "shift/attendance_index.html",
+        {
+            "group_cards": group_cards,
+            "today": today,
+            "has_disabled_groups": len(groups) > len(enabled_groups),
+        },
+    )
 
 
 def _default_work_type_id(group, user, work_types):
@@ -278,7 +290,8 @@ def attendance(request, group_id):
 
     if request.method == "POST":
         redirect_url = "{}?month={}".format(
-            reverse("shift:attendance", args=[group.id]), current_month.strftime("%Y-%m"),
+            reverse("shift:attendance", args=[group.id]),
+            current_month.strftime("%Y-%m"),
         )
         if not setting.allow_manual_input:
             messages.error(request, "このグループでは手動入力が許可されていません。")
@@ -293,21 +306,22 @@ def attendance(request, group_id):
     days = []
     for work_date in month_dates:
         day_records = records_by_date.get(work_date, [])
-        days.append({
-            "work_date": work_date,
-            "records": day_records,
-            # 登録済みの勤怠の下に「この日に勤怠を追加」の行を足すぶん、日付のセルを 1 行伸ばす
-            "rowspan": len(day_records) + (1 if setting.allow_manual_input else 0),
-            "opening_schedule": opening_schedule_by_date.get(work_date),
-            "is_today": work_date == today,
-            "is_future": work_date > today,
-            "is_saturday": work_date.weekday() == 5,
-            "is_sunday": work_date.weekday() == 6,
-        })
+        days.append(
+            {
+                "work_date": work_date,
+                "records": day_records,
+                # 登録済みの勤怠の下に「この日に勤怠を追加」の行を足すぶん、日付のセルを 1 行伸ばす
+                "rowspan": len(day_records) + (1 if setting.allow_manual_input else 0),
+                "opening_schedule": opening_schedule_by_date.get(work_date),
+                "is_today": work_date == today,
+                "is_future": work_date > today,
+                "is_saturday": work_date.weekday() == 5,
+                "is_sunday": work_date.weekday() == 6,
+            }
+        )
 
     today_records = list(
-        AttendanceRecord.objects.filter(group=group, user=request.user, work_date=today)
-        .select_related("work_type")
+        AttendanceRecord.objects.filter(group=group, user=request.user, work_date=today).select_related("work_type")
     )
     today_worked_minutes = sum(record.worked_minutes or 0 for record in today_records)
     open_record = _open_clock_record(group, request.user, today)
@@ -348,8 +362,11 @@ def _open_clock_record(group, user, today):
     for work_date in (today, today - timedelta(days=1)):
         record = (
             AttendanceRecord.objects.filter(
-                group=group, user=user, work_date=work_date,
-                start_time__isnull=False, end_time__isnull=True,
+                group=group,
+                user=user,
+                work_date=work_date,
+                start_time__isnull=False,
+                end_time__isnull=True,
             )
             .select_related("work_type")
             .order_by("-start_time", "-id")
@@ -405,11 +422,16 @@ def attendance_clock(request, group_id):
             messages.error(request, "この時刻を含む勤怠がすでに登録されています。一覧表から確認してください。")
             return redirect(redirect_url)
         if open_record is not None:
-            messages.warning(request, f"{_date_label(open_record.work_date)} の退勤が記録されていません。"
-                                      "一覧表から修正してください。")
+            messages.warning(
+                request,
+                f"{_date_label(open_record.work_date)} の退勤が記録されていません。一覧表から修正してください。",
+            )
         record = AttendanceRecord(
-            group=group, user=request.user, work_date=today,
-            start_time=now_time, source=AttendanceRecord.CLOCK,
+            group=group,
+            user=request.user,
+            work_date=today,
+            start_time=now_time,
+            source=AttendanceRecord.CLOCK,
         )
         record.apply_work_type(work_type)
         record.save()
@@ -501,21 +523,26 @@ def attendance_settings(request, group_id):
             "work_type": work_type,
             "record_count": record_counts.get(work_type.id, 0),
             "delete_url": (
-                "" if record_counts.get(work_type.id)
+                ""
+                if record_counts.get(work_type.id)
                 else reverse("shift:work_type_delete", args=[group.id, work_type.id])
             ),
         }
         for work_type in WorkType.objects.filter(group=group)
     ]
 
-    return render(request, "shift/attendance_settings.html", {
-        "group": group,
-        "setting": setting,
-        "form": form,
-        "work_type_rows": work_type_rows,
-        "today": _today(),
-        "summary_url": reverse("shift:attendance_summary", args=[group.id]),
-    })
+    return render(
+        request,
+        "shift/attendance_settings.html",
+        {
+            "group": group,
+            "setting": setting,
+            "form": form,
+            "work_type_rows": work_type_rows,
+            "today": _today(),
+            "summary_url": reverse("shift:attendance_summary", args=[group.id]),
+        },
+    )
 
 
 @login_required
@@ -529,7 +556,8 @@ def work_type_delete(request, group_id, work_type_id):
 
     if AttendanceRecord.objects.filter(work_type=work_type).exists():
         messages.error(
-            request, f"仕事内容「{work_type.name}」は勤怠が登録されているため削除できません。無効にしてください。",
+            request,
+            f"仕事内容「{work_type.name}」は勤怠が登録されているため削除できません。無効にしてください。",
         )
         return redirect("shift:attendance_settings", group_id=group.id)
 
@@ -565,10 +593,7 @@ def _breakdown_table(member_rows):
     column_totals = {key: {"minutes": 0, "amount": None} for key in column_keys}
     rows = []
     for row in member_rows:
-        items = {
-            (item["work_type"].id if item["work_type"] else None): item
-            for item in row["totals"]["by_work_type"]
-        }
+        items = {(item["work_type"].id if item["work_type"] else None): item for item in row["totals"]["by_work_type"]}
         cells = []
         for key in column_keys:
             item = items.get(key)
@@ -621,13 +646,15 @@ def attendance_summary(request, group_id):
 
     if request.method == "POST":
         redirect_url = "{}?month={}".format(
-            reverse("shift:attendance_summary", args=[group.id]), current_month.strftime("%Y-%m"),
+            reverse("shift:attendance_summary", args=[group.id]),
+            current_month.strftime("%Y-%m"),
         )
         if not setting.is_enabled:
             messages.error(request, "勤怠管理が有効になっていません。")
             return redirect(redirect_url)
         target = next(
-            (member for member in members if str(member.id) == request.POST.get("user_id", "")), None,
+            (member for member in members if str(member.id) == request.POST.get("user_id", "")),
+            None,
         )
         if target is None:
             messages.error(request, "対象のメンバーが不正です。")
@@ -638,7 +665,9 @@ def attendance_summary(request, group_id):
     opening_schedule_by_date = _opening_schedule_map(group, month_dates)
     records = defaultdict(list)
     for record in AttendanceRecord.objects.filter(
-        group=group, work_date__gte=month_from, work_date__lte=month_to,
+        group=group,
+        work_date__gte=month_from,
+        work_date__lte=month_to,
     ).select_related("work_type"):
         records[(record.user_id, record.work_date)].append(record)
 
@@ -668,23 +697,27 @@ def attendance_summary(request, group_id):
                 records_payload[f"{member.id}:{header['work_date'].isoformat()}"] = [
                     _record_payload(record) for record in day_records
                 ]
-            cells.append({
-                "work_date": header["work_date"],
-                "records": day_records,
-                "worked_display": minutes_to_hhmm(worked_minutes) if worked_minutes else "",
-                "is_working": any(record.is_working for record in day_records),
-                "is_saturday": header["is_saturday"],
-                "is_sunday": header["is_sunday"],
-                "is_today": header["is_today"],
-            })
+            cells.append(
+                {
+                    "work_date": header["work_date"],
+                    "records": day_records,
+                    "worked_display": minutes_to_hhmm(worked_minutes) if worked_minutes else "",
+                    "is_working": any(record.is_working for record in day_records),
+                    "is_saturday": header["is_saturday"],
+                    "is_sunday": header["is_sunday"],
+                    "is_today": header["is_today"],
+                }
+            )
         totals = _month_totals(member_records)
         month_total_minutes += totals["total_minutes"]
         month_total_amount += totals["total_amount"]
-        member_rows.append({
-            "member": member,
-            "cells": cells,
-            "totals": totals,
-        })
+        member_rows.append(
+            {
+                "member": member,
+                "cells": cells,
+                "totals": totals,
+            }
+        )
 
     context = {
         "group": group,
@@ -733,8 +766,19 @@ def _csv_number(value):
 
 
 def _csv_record_rows(records, show_amount):
-    header = ["勤務日", "曜日", "ユーザー名", "氏名", "仕事内容", "出勤時刻", "退勤時刻", "日またぎ",
-              "休憩（分）", "実働（時:分）", "実働（分）"]
+    header = [
+        "勤務日",
+        "曜日",
+        "ユーザー名",
+        "氏名",
+        "仕事内容",
+        "出勤時刻",
+        "退勤時刻",
+        "日またぎ",
+        "休憩（分）",
+        "実働（時:分）",
+        "実働（分）",
+    ]
     if show_amount:
         header += ["時給（円）", "金額（円）"]
     header += ["入力方法", "メモ"]
@@ -792,10 +836,7 @@ def _csv_member_rows(members, records, work_types, show_amount):
         ]
         if show_amount:
             row.append(totals["total_amount"])
-        items = {
-            (item["work_type"].id if item["work_type"] else None): item
-            for item in totals["by_work_type"]
-        }
+        items = {(item["work_type"].id if item["work_type"] else None): item for item in totals["by_work_type"]}
         for key in column_keys:
             item = items.get(key)
             row.append(item["minutes"] if item else 0)
@@ -821,10 +862,18 @@ def attendance_summary_csv(request, group_id):
     member_order = {member.id: index for index, member in enumerate(members)}
     records = sorted(
         AttendanceRecord.objects.filter(
-            group=group, user__in=members, work_date__gte=month_from, work_date__lte=month_to,
+            group=group,
+            user__in=members,
+            work_date__gte=month_from,
+            work_date__lte=month_to,
         ).select_related("user", "work_type"),
-        key=lambda record: (member_order[record.user_id], record.work_date,
-                            record.start_time is None, record.start_time, record.id),
+        key=lambda record: (
+            member_order[record.user_id],
+            record.work_date,
+            record.start_time is None,
+            record.start_time,
+            record.id,
+        ),
     )
     work_types = list(WorkType.objects.filter(group=group))
     show_amount = bool(work_types)

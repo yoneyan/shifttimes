@@ -14,11 +14,17 @@ class NoticeManageTests(TestCase):
     def setUp(self):
         user_model = get_user_model()
         self.staff_user = user_model.objects.create(
-            username="staff", username_jp="運営", email="staff@example.com",
-            is_active=True, is_staff=True,
+            username="staff",
+            username_jp="運営",
+            email="staff@example.com",
+            is_active=True,
+            is_staff=True,
         )
         self.member = user_model.objects.create(
-            username="member", username_jp="メンバー", email="member@example.com", is_active=True,
+            username="member",
+            username_jp="メンバー",
+            email="member@example.com",
+            is_active=True,
         )
         self.manage_url = reverse("notice:manage")
         self.now = timezone.now().replace(second=0, microsecond=0)
@@ -81,7 +87,9 @@ class NoticeManageTests(TestCase):
         notice = Notice.objects.get(title="メンテナンスのお知らせ")
 
         self._post_notice(
-            notice_id=str(notice.id), title="メンテナンス完了のお知らせ", is_active="",
+            notice_id=str(notice.id),
+            title="メンテナンス完了のお知らせ",
+            is_active="",
         )
 
         notice.refresh_from_db()
@@ -119,14 +127,21 @@ class NoticeManageTests(TestCase):
 
     def test_list_shows_status_of_each_notice(self):
         Notice.objects.create(
-            type1=Notice.ETC, title="掲示前", start_at=self.now + timedelta(days=1),
+            type1=Notice.ETC,
+            title="掲示前",
+            start_at=self.now + timedelta(days=1),
         )
         Notice.objects.create(
-            type1=Notice.ETC, title="終了", start_at=self.now - timedelta(days=2),
+            type1=Notice.ETC,
+            title="終了",
+            start_at=self.now - timedelta(days=2),
             end_at=self.now - timedelta(days=1),
         )
         Notice.objects.create(
-            type1=Notice.ETC, title="停止", start_at=self.now, is_active=False,
+            type1=Notice.ETC,
+            title="停止",
+            start_at=self.now,
+            is_active=False,
         )
         Notice.objects.create(type1=Notice.ETC, title="掲示中", start_at=self.now)
         self.client.force_login(self.staff_user)

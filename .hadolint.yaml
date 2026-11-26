@@ -1,0 +1,6 @@
+# hadolint（Dockerfile の Lint）の設定。CI の Lint (workflows / Dockerfile) ジョブで使う
+failure-threshold: warning
+
+ignored:
+  # apt パッケージのバージョン固定。ベースイメージ更新時に追従できなくなるため固定しない
+  - DL3008

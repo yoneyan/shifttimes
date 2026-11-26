@@ -135,7 +135,8 @@ class WorkTypeForm(forms.ModelForm):
     """勤怠の仕事内容と時給"""
 
     apply_from = forms.DateField(
-        label="登録済みの勤怠への反映", required=False,
+        label="登録済みの勤怠への反映",
+        required=False,
         widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}),
         help_text="日付を指定すると、その日以降の勤怠にも新しい時給を反映します。",
     )
@@ -237,24 +238,31 @@ class SlackNotificationSettingForm(forms.ModelForm):
     """
 
     clear_webhook_url = forms.BooleanField(
-        label="Webhook URL を削除する", required=False,
+        label="Webhook URL を削除する",
+        required=False,
         widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
     )
 
     class Meta:
         model = SlackNotificationSetting
         fields = (
-            "is_enabled", "webhook_url", "mention",
-            "notify_deadline_reminder", "reminder_days_before",
-            "notify_shift_confirmed", "notify_schedule_changed",
+            "is_enabled",
+            "webhook_url",
+            "mention",
+            "notify_deadline_reminder",
+            "reminder_days_before",
+            "notify_shift_confirmed",
+            "notify_schedule_changed",
         )
         widgets = {
             "is_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
-            "webhook_url": forms.URLInput(attrs={
-                "class": "form-control",
-                "placeholder": "https://hooks.slack.com/services/...",
-                "autocomplete": "off",
-            }),
+            "webhook_url": forms.URLInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "https://hooks.slack.com/services/...",
+                    "autocomplete": "off",
+                }
+            ),
             "mention": forms.TextInput(attrs={"class": "form-control", "placeholder": "例: <!here>"}),
             "notify_deadline_reminder": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "reminder_days_before": forms.NumberInput(attrs={"class": "form-control", "min": 0, "max": 60}),
@@ -270,13 +278,10 @@ class SlackNotificationSettingForm(forms.ModelForm):
             # 保存済みの URL は画面に出さない（伏せ字だけを help_text で見せる）
             self.initial["webhook_url"] = ""
             self.fields["webhook_url"].help_text = (
-                "登録済み（%s）。変更するときだけ新しい URL を入力してください。"
-                % self.instance.masked_webhook_url
+                "登録済み（%s）。変更するときだけ新しい URL を入力してください。" % self.instance.masked_webhook_url
             )
         else:
-            self.fields["webhook_url"].help_text = (
-                "Slack の Incoming Webhook で発行した URL を貼り付けてください。"
-            )
+            self.fields["webhook_url"].help_text = "Slack の Incoming Webhook で発行した URL を貼り付けてください。"
 
     def clean_webhook_url(self):
         url = (self.cleaned_data.get("webhook_url") or "").strip()
@@ -286,7 +291,9 @@ class SlackNotificationSettingForm(forms.ModelForm):
             # 未入力は「変更しない」。初回登録なら空のまま
             return self.instance.webhook_url
         if not url.startswith("https://hooks.slack.com/"):
-            raise forms.ValidationError("Slack の Incoming Webhook URL（https://hooks.slack.com/...）を入力してください。")
+            raise forms.ValidationError(
+                "Slack の Incoming Webhook URL（https://hooks.slack.com/...）を入力してください。"
+            )
         return url
 
     def clean(self):
@@ -308,16 +315,22 @@ class SlackShiftRequestForm(forms.Form):
         widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}),
     )
     deadline_date = forms.DateField(
-        label="提出期限日", required=False,
+        label="提出期限日",
+        required=False,
         widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}),
     )
     message = forms.CharField(
-        label="ひとこと", required=False, max_length=500,
-        widget=forms.Textarea(attrs={"class": "form-control", "rows": 3,
-                                     "placeholder": "例: 今月は連休があるので早めにお願いします"}),
+        label="ひとこと",
+        required=False,
+        max_length=500,
+        widget=forms.Textarea(
+            attrs={"class": "form-control", "rows": 3, "placeholder": "例: 今月は連休があるので早めにお願いします"}
+        ),
     )
     include_unsubmitted = forms.BooleanField(
-        label="未提出メンバーの名前を載せる", required=False, initial=True,
+        label="未提出メンバーの名前を載せる",
+        required=False,
+        initial=True,
         widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
     )
 

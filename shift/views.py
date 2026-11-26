@@ -181,11 +181,7 @@ def _shift_input_is_blocked(group, work_date):
 
 def _open_shift_period(group):
     """現在シフト希望を入力できる対象期間（提出期限が来ていないもののうち最も近いもの）を返す"""
-    return (
-        ShiftDeadline.objects.filter(group=group, deadline_date__gte=_today())
-        .order_by("deadline_date")
-        .first()
-    )
+    return ShiftDeadline.objects.filter(group=group, deadline_date__gte=_today()).order_by("deadline_date").first()
 
 
 class DefaultShiftPeriod:
@@ -326,12 +322,14 @@ def index(request):
     draft_counts = {}
     for group in groups:
         draft_counts[group.id] = ShiftEntry.objects.filter(
-            group=group, user=request.user, work_date__gte=today, is_draft=True,
+            group=group,
+            user=request.user,
+            work_date__gte=today,
+            is_draft=True,
         ).count()
 
     attendance_group_ids = set(
-        AttendanceSetting.objects.filter(group__in=groups, is_enabled=True)
-        .values_list("group_id", flat=True)
+        AttendanceSetting.objects.filter(group__in=groups, is_enabled=True).values_list("group_id", flat=True)
     )
 
     group_cards = [
@@ -380,8 +378,10 @@ def shift_calendar(request, group_id):
     entries_by_date = {}
     for entry in (
         ShiftEntry.objects.filter(
-            group=group, user=request.user,
-            work_date__gte=month_from, work_date__lte=month_to,
+            group=group,
+            user=request.user,
+            work_date__gte=month_from,
+            work_date__lte=month_to,
         )
         .select_related("time_slot")
         .order_by("time_slot__start_time")
@@ -395,31 +395,34 @@ def shift_calendar(request, group_id):
         chips = []
         for entry in entries_by_date.get(work_date, []):
             status_counts[entry.status] = status_counts.get(entry.status, 0) + 1
-            chips.append({
-                "symbol": _SHIFT_STATUS_SYMBOLS.get(entry.status, "-"),
-                "label": entry.time_slot.start_time.strftime("%H:%M"),
-                "color": _SHIFT_STATUS_COLORS.get(entry.status, "#6c757d"),
-                "title": "%s %s%s" % (
-                    entry.time_slot.display_label,
-                    entry.get_status_display(),
-                    " / %s" % entry.note if entry.note else "",
-                ),
-                "is_draft": entry.is_draft,
-            })
+            chips.append(
+                {
+                    "symbol": _SHIFT_STATUS_SYMBOLS.get(entry.status, "-"),
+                    "label": entry.time_slot.start_time.strftime("%H:%M"),
+                    "color": _SHIFT_STATUS_COLORS.get(entry.status, "#6c757d"),
+                    "title": "%s %s%s"
+                    % (
+                        entry.time_slot.display_label,
+                        entry.get_status_display(),
+                        " / %s" % entry.note if entry.note else "",
+                    ),
+                    "is_draft": entry.is_draft,
+                }
+            )
         return {
             "schedule": schedule,
             "schedule_color": schedule.schedule_type.color if schedule else "",
             "is_blocked": schedule is not None and schedule.schedule_type.blocks_shift_input,
             "chips": chips,
-            "entry_url": "%s?date=%s" % (
-                reverse("shift:entry_table", args=[group.id]), work_date.isoformat(),
+            "entry_url": "%s?date=%s"
+            % (
+                reverse("shift:entry_table", args=[group.id]),
+                work_date.isoformat(),
             ),
         }
 
     weeks = _month_weeks(current_month, today, build_cell)
-    draft_count = sum(
-        1 for entry_list in entries_by_date.values() for entry in entry_list if entry.is_draft
-    )
+    draft_count = sum(1 for entry_list in entries_by_date.values() for entry in entry_list if entry.is_draft)
 
     summary = [
         {
@@ -429,7 +432,8 @@ def shift_calendar(request, group_id):
             "color": _SHIFT_STATUS_COLORS.get(status, "#6c757d"),
             "count": status_counts.get(status, 0),
         }
-        for status, symbol, label in ENTRY_STATUS_CHOICES if status
+        for status, symbol, label in ENTRY_STATUS_CHOICES
+        if status
     ]
 
     context = {
@@ -542,22 +546,15 @@ def _save_entry_table(request, group, open_period, time_slots):
             weekday = int(request.POST.get("weekday", ""))
         except ValueError:
             weekday = None
-        target_dates = [
-            d for d in _date_range(date_from, date_to) if weekday is not None and d.weekday() == weekday
-        ]
+        target_dates = [d for d in _date_range(date_from, date_to) if weekday is not None and d.weekday() == weekday]
 
-    target_dates = [
-        d for d in target_dates if open_period.period_start <= d <= open_period.period_end
-    ]
+    target_dates = [d for d in target_dates if open_period.period_start <= d <= open_period.period_end]
     if not target_dates:
         messages.error(request, "対象になる日付がありません。")
         return redirect(redirect_url)
 
     valid_statuses = {value for value, _label in ShiftEntry.STATUS_CHOICES}
-    statuses = {
-        time_slot.id: request.POST.get("status_%d" % time_slot.id, "")
-        for time_slot in time_slots
-    }
+    statuses = {time_slot.id: request.POST.get("status_%d" % time_slot.id, "") for time_slot in time_slots}
     comment = request.POST.get("comment", "").strip()
 
     saved_days = 0
@@ -637,11 +634,13 @@ def entry_table(request, group_id):
         comment = ""
         for time_slot in time_slots:
             entry = existing_entries.get((work_date, time_slot.id))
-            cells.append({
-                "time_slot": time_slot,
-                "entry": entry,
-                "status": entry.status if entry else "",
-            })
+            cells.append(
+                {
+                    "time_slot": time_slot,
+                    "entry": entry,
+                    "status": entry.status if entry else "",
+                }
+            )
             statuses[str(time_slot.id)] = entry.status if entry else ""
             if entry:
                 if entry.is_draft:
@@ -650,32 +649,38 @@ def entry_table(request, group_id):
                     comment = entry.note
         if not is_shift_blocked:
             open_dates.append(work_date)
-        rows.append({
-            "work_date": work_date,
-            "opening_schedule": opening_schedule,
-            "is_shift_blocked": is_shift_blocked,
-            "is_today": work_date == today,
-            "cells": cells,
-            "statuses_json": json.dumps(statuses),
-            "comment": comment,
-        })
+        rows.append(
+            {
+                "work_date": work_date,
+                "opening_schedule": opening_schedule,
+                "is_shift_blocked": is_shift_blocked,
+                "is_today": work_date == today,
+                "cells": cells,
+                "statuses_json": json.dumps(statuses),
+                "comment": comment,
+            }
+        )
 
-    return render(request, "shift/entry_table.html", {
-        "group": group,
-        "time_slots": time_slots,
-        "rows": rows,
-        "status_choices": ENTRY_STATUS_CHOICES,
-        "date_from": date_from,
-        "date_to": date_to,
-        "open_period": open_period,
-        "current_month": current_month,
-        "current_month_value": current_month.strftime("%Y-%m"),
-        "prev_month": months[month_index - 1] if month_index > 0 else None,
-        "next_month": months[month_index + 1] if month_index + 1 < len(months) else None,
-        "weekday_options": _weekday_options(open_dates),
-        "draft_count": draft_count,
-        "focus_date": focus_date,
-    })
+    return render(
+        request,
+        "shift/entry_table.html",
+        {
+            "group": group,
+            "time_slots": time_slots,
+            "rows": rows,
+            "status_choices": ENTRY_STATUS_CHOICES,
+            "date_from": date_from,
+            "date_to": date_to,
+            "open_period": open_period,
+            "current_month": current_month,
+            "current_month_value": current_month.strftime("%Y-%m"),
+            "prev_month": months[month_index - 1] if month_index > 0 else None,
+            "next_month": months[month_index + 1] if month_index + 1 < len(months) else None,
+            "weekday_options": _weekday_options(open_dates),
+            "draft_count": draft_count,
+            "focus_date": focus_date,
+        },
+    )
 
 
 @login_required
@@ -734,13 +739,17 @@ def shift_confirm(request, group_id):
         for d in dates
     ]
 
-    return render(request, "shift/shift_confirm.html", {
-        "group": group,
-        "summary_rows": summary_rows,
-        "date_from": date_from,
-        "date_to": date_to,
-        "draft_count": len(draft_entries),
-    })
+    return render(
+        request,
+        "shift/shift_confirm.html",
+        {
+            "group": group,
+            "summary_rows": summary_rows,
+            "date_from": date_from,
+            "date_to": date_to,
+            "draft_count": len(draft_entries),
+        },
+    )
 
 
 def _admin_group_landing(request, title, target_name):
@@ -757,10 +766,14 @@ def _admin_group_landing(request, title, target_name):
         }
         for group in groups
     ]
-    return render(request, "shift/admin_group_select.html", {
-        "title": title,
-        "group_cards": group_cards,
-    })
+    return render(
+        request,
+        "shift/admin_group_select.html",
+        {
+            "title": title,
+            "group_cards": group_cards,
+        },
+    )
 
 
 @login_required
@@ -791,9 +804,7 @@ _SCHEDULE_TYPE_PALETTE = [
 
 def _next_schedule_type_color(group):
     """まだ使われていないパレットの色を返す（すべて使用済みならパレットの先頭）"""
-    used_colors = set(
-        OpeningScheduleType.objects.filter(group=group).values_list("color", flat=True)
-    )
+    used_colors = set(OpeningScheduleType.objects.filter(group=group).values_list("color", flat=True))
     for color in _SCHEDULE_TYPE_PALETTE:
         if color not in used_colors:
             return color
@@ -825,7 +836,8 @@ def schedule_settings(request, group_id):
 
     if request.method == "POST" and action == "time_slot":
         time_slot = TimeSlot.objects.filter(
-            group=group, id=request.POST.get("time_slot_id", "") or 0,
+            group=group,
+            id=request.POST.get("time_slot_id", "") or 0,
         ).first()
         time_slot_form = TimeSlotForm(request.POST, instance=time_slot, group=group)
         if time_slot_form.is_valid():
@@ -839,7 +851,8 @@ def schedule_settings(request, group_id):
 
     if request.method == "POST" and action == "schedule_type":
         schedule_type = OpeningScheduleType.objects.filter(
-            group=group, id=request.POST.get("schedule_type_id", "") or 0,
+            group=group,
+            id=request.POST.get("schedule_type_id", "") or 0,
         ).first()
         type_form = OpeningScheduleTypeForm(request.POST, instance=schedule_type, group=group)
         if type_form.is_valid():
@@ -872,7 +885,10 @@ def schedule_settings(request, group_id):
 
         schedule_type_id = request.POST.get("schedule_type", "")
         saved = _save_opening_schedules(
-            group, target_dates, schedule_type_id, request.POST.get("note", "").strip(),
+            group,
+            target_dates,
+            schedule_type_id,
+            request.POST.get("note", "").strip(),
         )
         if not saved:
             messages.error(request, "開講区分の保存に失敗しました。")
@@ -883,16 +899,17 @@ def schedule_settings(request, group_id):
         else:
             messages.success(request, "%d日分を未設定（曜日の基本スケジュール）に戻しました。" % saved)
         schedule_type_name = (
-            OpeningScheduleType.objects.filter(group=group, id=schedule_type_id)
-            .values_list("name", flat=True).first()
-            if schedule_type_id else ""
+            OpeningScheduleType.objects.filter(group=group, id=schedule_type_id).values_list("name", flat=True).first()
+            if schedule_type_id
+            else ""
         )
         slack.notify_schedule_changed(group, target_dates, schedule_type_name)
         return redirect(redirect_url)
 
     if request.method == "POST" and action == "deadline":
         deadline = ShiftDeadline.objects.filter(
-            group=group, id=request.POST.get("deadline_id", "") or 0,
+            group=group,
+            id=request.POST.get("deadline_id", "") or 0,
         ).first()
         deadline_form = ShiftDeadlineForm(request.POST, instance=deadline)
         if deadline_form.is_valid():
@@ -943,20 +960,24 @@ def schedule_settings(request, group_id):
     schedule_by_date = {
         schedule.work_date: schedule
         for schedule in DateOpeningSchedule.objects.filter(
-            group=group, work_date__gte=month_from, work_date__lte=month_to,
+            group=group,
+            work_date__gte=month_from,
+            work_date__lte=month_to,
         ).select_related("schedule_type")
     }
     schedule_rows = []
     for work_date in month_dates:
         date_schedule = schedule_by_date.get(work_date)
-        schedule_rows.append({
-            "work_date": work_date,
-            "date_schedule": date_schedule,
-            "color": date_schedule.schedule_type.color if date_schedule else "",
-            "is_today": work_date == today,
-            "schedule_type_id": date_schedule.schedule_type_id if date_schedule else "",
-            "note": date_schedule.note if date_schedule else "",
-        })
+        schedule_rows.append(
+            {
+                "work_date": work_date,
+                "date_schedule": date_schedule,
+                "color": date_schedule.schedule_type.color if date_schedule else "",
+                "is_today": work_date == today,
+                "schedule_type_id": date_schedule.schedule_type_id if date_schedule else "",
+                "note": date_schedule.note if date_schedule else "",
+            }
+        )
 
     schedule_type_options = [
         {
@@ -969,26 +990,30 @@ def schedule_settings(request, group_id):
         if schedule_type.is_active
     ]
 
-    return render(request, "shift/schedule_settings.html", {
-        "group": group,
-        "time_slot_rows": time_slot_rows,
-        "schedule_types": schedule_types,
-        "schedule_type_palette": _SCHEDULE_TYPE_PALETTE,
-        "default_schedule_type_color": _next_schedule_type_color(group),
-        "schedule_type_options": schedule_type_options,
-        "schedule_rows": schedule_rows,
-        "current_month": current_month,
-        "current_month_value": current_month.strftime("%Y-%m"),
-        "prev_month": _add_month(current_month, -1),
-        "next_month": _add_month(current_month, 1),
-        "weekday_options": _weekday_options(month_dates),
-        "default_deadline_start": next_month_start,
-        "default_deadline_end": next_month_end,
-        "default_deadline_date": today,
-        "deadlines": deadlines,
-        "open_period": open_period,
-        "calendar_url": reverse("shift:schedule", args=[group.id]),
-    })
+    return render(
+        request,
+        "shift/schedule_settings.html",
+        {
+            "group": group,
+            "time_slot_rows": time_slot_rows,
+            "schedule_types": schedule_types,
+            "schedule_type_palette": _SCHEDULE_TYPE_PALETTE,
+            "default_schedule_type_color": _next_schedule_type_color(group),
+            "schedule_type_options": schedule_type_options,
+            "schedule_rows": schedule_rows,
+            "current_month": current_month,
+            "current_month_value": current_month.strftime("%Y-%m"),
+            "prev_month": _add_month(current_month, -1),
+            "next_month": _add_month(current_month, 1),
+            "weekday_options": _weekday_options(month_dates),
+            "default_deadline_start": next_month_start,
+            "default_deadline_end": next_month_end,
+            "default_deadline_date": today,
+            "deadlines": deadlines,
+            "open_period": open_period,
+            "calendar_url": reverse("shift:schedule", args=[group.id]),
+        },
+    )
 
 
 @login_required
@@ -1062,10 +1087,7 @@ def summary(request, group_id):
     members = sorted(
         (
             membership.user
-            for membership in (
-                UserGroup.objects.filter(group=group, user__is_active=True)
-                .select_related("user")
-            )
+            for membership in (UserGroup.objects.filter(group=group, user__is_active=True).select_related("user"))
         ),
         key=lambda user: (user.get_display_name(), user.username),
     )
@@ -1082,7 +1104,8 @@ def summary(request, group_id):
     )
     if inactive_time_slots:
         time_slots = sorted(
-            time_slots + inactive_time_slots, key=lambda slot: (slot.start_time, slot.name),
+            time_slots + inactive_time_slots,
+            key=lambda slot: (slot.start_time, slot.name),
         )
 
     # 下書きは「未提出」なので提出状況には含めない
@@ -1093,10 +1116,7 @@ def summary(request, group_id):
         is_draft=False,
     ).select_related("user", "time_slot")
     # entry_map[(user_id, work_date, time_slot_id)] = entry
-    entry_map = {
-        (e.user_id, e.work_date, e.time_slot_id): e
-        for e in entries
-    }
+    entry_map = {(e.user_id, e.work_date, e.time_slot_id): e for e in entries}
 
     dates = [date_from + timedelta(days=offset) for offset in range(days)]
     opening_schedule_by_date = _opening_schedule_map(group, dates)
@@ -1106,17 +1126,19 @@ def summary(request, group_id):
     previous_month = None
     for work_date in dates:
         sched = opening_schedule_by_date.get(work_date)
-        date_headers.append({
-            "work_date": work_date,
-            "weekday": work_date.weekday(),  # 0=月 … 5=土 6=日
-            "is_saturday": work_date.weekday() == 5,
-            "is_sunday": work_date.weekday() == 6,
-            "is_today": work_date == today,
-            "show_month": work_date.month != previous_month,
-            "opening_schedule": sched,
-            "schedule_color": sched.schedule_type.color if sched else "",
-            "is_blocked": sched is not None and sched.schedule_type.blocks_shift_input,
-        })
+        date_headers.append(
+            {
+                "work_date": work_date,
+                "weekday": work_date.weekday(),  # 0=月 … 5=土 6=日
+                "is_saturday": work_date.weekday() == 5,
+                "is_sunday": work_date.weekday() == 6,
+                "is_today": work_date == today,
+                "show_month": work_date.month != previous_month,
+                "opening_schedule": sched,
+                "schedule_color": sched.schedule_type.color if sched else "",
+                "is_blocked": sched is not None and sched.schedule_type.blocks_shift_input,
+            }
+        )
         previous_month = work_date.month
 
     # 入力対象日（休校などシフト入力できない日を除く）
@@ -1124,9 +1146,7 @@ def summary(request, group_id):
 
     # 日付×時間帯ごとの「勤務可能」人数
     day_slot_counts = {
-        (dh["work_date"], ts.id): {"available": 0, "maybe": 0}
-        for dh in date_headers
-        for ts in time_slots
+        (dh["work_date"], ts.id): {"available": 0, "maybe": 0} for dh in date_headers for ts in time_slots
     }
 
     # メンバー行
@@ -1155,27 +1175,31 @@ def summary(request, group_id):
                     available_days += 1
                 if has_any:
                     answered_days += 1
-            date_cells.append({
-                "work_date": work_date,
-                "is_saturday": dh["is_saturday"],
-                "is_sunday": dh["is_sunday"],
-                "is_blocked": dh["is_blocked"],
-                "is_today": dh["is_today"],
-                "slot_cells": slot_cells,
-                "has_any": has_any,
-            })
+            date_cells.append(
+                {
+                    "work_date": work_date,
+                    "is_saturday": dh["is_saturday"],
+                    "is_sunday": dh["is_sunday"],
+                    "is_blocked": dh["is_blocked"],
+                    "is_today": dh["is_today"],
+                    "slot_cells": slot_cells,
+                    "has_any": has_any,
+                }
+            )
 
         status, status_label = _submission_status(answered_days, target_days)
 
-        member_rows.append({
-            "member": member,
-            "date_cells": date_cells,
-            "available_days": available_days,
-            "answered_days": answered_days,
-            "missing_days": max(target_days - answered_days, 0),
-            "status": status,
-            "status_label": status_label,
-        })
+        member_rows.append(
+            {
+                "member": member,
+                "date_cells": date_cells,
+                "available_days": available_days,
+                "answered_days": answered_days,
+                "missing_days": max(target_days - answered_days, 0),
+                "status": status,
+                "status_label": status_label,
+            }
+        )
 
     # 並び順（既定は未提出の人を上に出して、声をかける相手が分かるようにする）
     sort = "name" if request.GET.get("sort", "") == "name" else "status"
@@ -1192,32 +1216,36 @@ def summary(request, group_id):
     # 日別の合計行
     day_totals = []
     for dh in date_headers:
-        day_totals.append({
-            "work_date": dh["work_date"],
-            "is_saturday": dh["is_saturday"],
-            "is_sunday": dh["is_sunday"],
-            "is_blocked": dh["is_blocked"],
-            "is_today": dh["is_today"],
-            "slot_counts": [
-                {
-                    "time_slot": ts,
-                    "available": day_slot_counts[(dh["work_date"], ts.id)]["available"],
-                    "maybe": day_slot_counts[(dh["work_date"], ts.id)]["maybe"],
-                }
-                for ts in time_slots
-            ],
-        })
+        day_totals.append(
+            {
+                "work_date": dh["work_date"],
+                "is_saturday": dh["is_saturday"],
+                "is_sunday": dh["is_sunday"],
+                "is_blocked": dh["is_blocked"],
+                "is_today": dh["is_today"],
+                "slot_counts": [
+                    {
+                        "time_slot": ts,
+                        "available": day_slot_counts[(dh["work_date"], ts.id)]["available"],
+                        "maybe": day_slot_counts[(dh["work_date"], ts.id)]["maybe"],
+                    }
+                    for ts in time_slots
+                ],
+            }
+        )
 
     slot_legend = []
     for index, ts in enumerate(time_slots, start=1):
         time_range = "%s〜%s" % (ts.start_time.strftime("%H:%M"), ts.end_time.strftime("%H:%M"))
         normalized_name = ts.name.replace("-", "〜").replace("–", "〜").replace("~", "〜").strip()
-        slot_legend.append({
-            "index": index,
-            "time_slot": ts,
-            "time_range": time_range,
-            "name": "" if normalized_name == time_range else ts.name,
-        })
+        slot_legend.append(
+            {
+                "index": index,
+                "time_slot": ts,
+                "time_range": time_range,
+                "name": "" if normalized_name == time_range else ts.name,
+            }
+        )
 
     stats = {
         "members": len(member_rows),
@@ -1245,7 +1273,9 @@ def summary(request, group_id):
     # 対象期間に重なる提出期限
     deadline = (
         ShiftDeadline.objects.filter(
-            group=group, period_start__lte=date_to, period_end__gte=date_from,
+            group=group,
+            period_start__lte=date_to,
+            period_end__gte=date_from,
         )
         .order_by("deadline_date")
         .first()
@@ -1290,12 +1320,14 @@ def slack_settings(request, group_id):
     open_period = _shift_entry_period(group)
 
     setting_form = SlackNotificationSettingForm(instance=setting)
-    request_form = SlackShiftRequestForm(initial={
-        "period_start": open_period.period_start,
-        "period_end": open_period.period_end,
-        "deadline_date": open_period.deadline_date,
-        "include_unsubmitted": True,
-    })
+    request_form = SlackShiftRequestForm(
+        initial={
+            "period_start": open_period.period_start,
+            "period_end": open_period.period_end,
+            "deadline_date": open_period.deadline_date,
+            "include_unsubmitted": True,
+        }
+    )
 
     action = request.POST.get("action", "") if request.method == "POST" else ""
 
@@ -1338,16 +1370,19 @@ def slack_settings(request, group_id):
         messages.error(request, "送信できませんでした。%s" % request_form.errors.as_text())
 
     unsubmitted = (
-        slack.unsubmitted_members(group, open_period.period_start, open_period.period_end)
-        if setting.is_ready else []
+        slack.unsubmitted_members(group, open_period.period_start, open_period.period_end) if setting.is_ready else []
     )
 
-    return render(request, "shift/slack_settings.html", {
-        "group": group,
-        "setting": setting,
-        "setting_form": setting_form,
-        "request_form": request_form,
-        "open_period": open_period,
-        "unsubmitted_members": unsubmitted,
-        "member_count": group.member_count,
-    })
+    return render(
+        request,
+        "shift/slack_settings.html",
+        {
+            "group": group,
+            "setting": setting,
+            "setting_form": setting_form,
+            "request_form": request_form,
+            "open_period": open_period,
+            "unsubmitted_members": unsubmitted,
+            "member_count": group.member_count,
+        },
+    )

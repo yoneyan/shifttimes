@@ -112,20 +112,42 @@ cron の例（毎朝 9 時）:
 uv run python manage.py test
 ```
 
-Lint は ruff で行います。
+Lint・整形は ruff で行います。CI では整形漏れもエラーになるため、コミット前に
+`ruff format` をかけてください。
 
 ```bash
 uv run ruff check .
+uv run ruff format .
+```
+
+Django の system check も CI と同じ条件で確認できます。
+
+```bash
+uv run python manage.py check --fail-level WARNING
+```
+
+一括整形のコミットは `.git-blame-ignore-revs` に登録しています。ローカルの `git blame`
+でも無視するには次を一度実行してください。
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
 
 ### CI
 
-`.github/workflows/ci.yaml` が `master` / `develop` への push と Pull Request で
-次を実行します。
+`master` / `develop` への push と Pull Request で次のチェックが走ります。
 
-- `manage.py makemigrations --check`（マイグレーションの作り忘れ検出）と `manage.py test`
-- `ruff check`
-- Docker イメージのビルド確認（push はしない）
+| ワークフロー | ジョブ | 内容 |
+|---|---|---|
+| `ci.yaml` | Test | `manage.py check --fail-level WARNING`、本番相当の環境変数での `manage.py check --deploy`、`makemigrations --check`（マイグレーションの作り忘れ検出）、`manage.py test` |
+| `ci.yaml` | Lint (ruff) | `ruff check` と `ruff format --check` |
+| `ci.yaml` | Lint (workflows / Dockerfile) | actionlint（shellcheck 込み）で GitHub Actions を、hadolint で Dockerfile を検査（設定は `.hadolint.yaml`） |
+| `ci.yaml` | Docker build check | Docker イメージのビルド確認（push はしない） |
+| `dependency-audit.yaml` | pip-audit | `uv.lock` の依存（全グループ）に既知の脆弱性がないか検査。毎週月曜にも定期実行 |
+| `codeql-analysis.yml` | Analyze | CodeQL による Python と GitHub Actions の静的解析。毎週定期実行 |
+
+依存ライブラリ・アクション・ベースイメージの更新は Dependabot（`.github/dependabot.yml`）が
+毎週 Pull Request を作ります。
 
 ## 環境変数
 
@@ -148,6 +170,21 @@ uv run ruff check .
 | `ADMIN_DOMAIN_URL` | `test.local` | 運営向け Slack 通知に載せる管理画面の URL |
 | `APP_NAME` | `ShiftTimes` | 認証アプリ（TOTP）に表示されるサービス名 |
 | `CONTACT_EMAIL` | `contact@example.com` | Enterprise プランの問い合わせ先 |
+
+### HTTPS
+
+HTTP のまま運用する構成を壊さないよう既定はすべて無効です。HTTPS で公開する本番では
+有効化してください（CI の `check --deploy` はこれらを有効にした状態で検査しています）。
+
+| 変数 | 既定値 | 説明 |
+|---|---|---|
+| `SECURE_SSL_REDIRECT` | `false` | `true` で HTTP へのアクセスを HTTPS にリダイレクト |
+| `SECURE_PROXY_SSL_HEADER` | `false` | `true` でリバースプロキシの `X-Forwarded-Proto: https` を信頼して HTTPS と判定する。TLS をプロキシで終端し、プロキシがこのヘッダを必ず付け直す構成でのみ有効化する（同梱の nginx 設定ではコメントアウトされている `proxy_set_header X-Forwarded-Proto` を有効にする） |
+| `SESSION_COOKIE_SECURE` | `false` | `true` でセッション Cookie を HTTPS のみで送信 |
+| `CSRF_COOKIE_SECURE` | `false` | `true` で CSRF Cookie を HTTPS のみで送信 |
+| `SECURE_HSTS_SECONDS` | `0` | HSTS の有効期間（秒）。`0` で無効。短い値から段階的に延ばすこと |
+| `SECURE_HSTS_INCLUDE_SUBDOMAINS` | `false` | `true` で HSTS をサブドメインにも適用 |
+| `SECURE_HSTS_PRELOAD` | `false` | `true` で HSTS preload を指定 |
 
 ### メール
 

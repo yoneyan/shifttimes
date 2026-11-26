@@ -134,8 +134,7 @@ def list_groups(request):
         groups.append(
             {
                 "data": group,
-                "administrator": group.usergroup_set.filter(user=request.user,
-                                                            is_admin=True).exists(),
+                "administrator": group.usergroup_set.filter(user=request.user, is_admin=True).exists(),
             }
         )
 
@@ -163,9 +162,8 @@ def group_members(request, group_id: int):
     if not user_group:
         return render(request, "error.html", {"text": "このグループにアクセスする権限がありません"})
 
-    memberships = (
-        user_group.group.usergroup_set.select_related("user")
-        .order_by("-is_admin", "user__username_jp", "user__username")
+    memberships = user_group.group.usergroup_set.select_related("user").order_by(
+        "-is_admin", "user__username_jp", "user__username"
     )
     members = [
         {
@@ -211,8 +209,7 @@ def edit_group(request, group_id: int):
     user_group = request.user.usergroup_set.filter(group_id=group_id, user=request.user).first()
     if not user_group:
         return render(request, "error.html", {"text": "このグループにアクセスする権限がありません"})
-    form = GroupForm(request.POST or None, instance=user_group.group,
-                     editable=not user_group.is_admin)
+    form = GroupForm(request.POST or None, instance=user_group.group, editable=not user_group.is_admin)
     if request.method == "POST" and user_group.is_admin:
         if form.is_valid():
             form.save()

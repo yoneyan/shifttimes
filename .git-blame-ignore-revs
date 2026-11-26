@@ -1,0 +1,5 @@
+# git blame で無視する一括整形コミット（GitHub の blame 表示にも反映される）
+# ローカルでは git config blame.ignoreRevsFile .git-blame-ignore-revs で有効化する
+
+# ruff format によるコード全体の整形
+aad0826d86dfef5cc22d4140b62d7874b69ef72c

@@ -8,6 +8,7 @@
 
 連携されていない LINE アカウントでは新規ユーザを作らず、案内画面を返す。
 """
+
 import secrets
 
 from django.conf import settings
@@ -99,11 +100,7 @@ def callback(request):
 
 
 def _complete_login(request, profile):
-    account = (
-        LineAccount.objects.select_related("user")
-        .filter(line_user_id=profile["line_user_id"])
-        .first()
-    )
+    account = LineAccount.objects.select_related("user").filter(line_user_id=profile["line_user_id"]).first()
     if not account:
         # 新規ユーザは作らない。先に ID・パスワードでログインして連携してもらう
         return render(request, "user/line_not_linked.html", {})
@@ -125,11 +122,7 @@ def _complete_link(request, profile):
         # 連携の途中でセッションが切れた場合
         return render(request, "error.html", {"text": INVALID_SESSION_MESSAGE})
 
-    taken = (
-        LineAccount.objects.filter(line_user_id=profile["line_user_id"])
-        .exclude(user=request.user)
-        .exists()
-    )
+    taken = LineAccount.objects.filter(line_user_id=profile["line_user_id"]).exclude(user=request.user).exists()
     if taken:
         return render(
             request,

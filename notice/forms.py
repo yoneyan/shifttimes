@@ -11,18 +11,27 @@ class NoticeForm(forms.ModelForm):
     class Meta:
         model = Notice
         fields = (
-            "type1", "title", "body", "start_at", "end_at",
-            "is_active", "is_important", "is_fail", "is_info",
+            "type1",
+            "title",
+            "body",
+            "start_at",
+            "end_at",
+            "is_active",
+            "is_important",
+            "is_fail",
+            "is_info",
         )
         widgets = {
             "type1": forms.Select(attrs={"class": "form-select"}),
             "title": forms.TextInput(attrs={"class": "form-control", "maxlength": 250}),
             "body": forms.Textarea(attrs={"class": "form-control", "rows": 6}),
             "start_at": forms.DateTimeInput(
-                attrs={"type": "datetime-local", "class": "form-control"}, format=DATETIME_LOCAL_FORMAT,
+                attrs={"type": "datetime-local", "class": "form-control"},
+                format=DATETIME_LOCAL_FORMAT,
             ),
             "end_at": forms.DateTimeInput(
-                attrs={"type": "datetime-local", "class": "form-control"}, format=DATETIME_LOCAL_FORMAT,
+                attrs={"type": "datetime-local", "class": "form-control"},
+                format=DATETIME_LOCAL_FORMAT,
             ),
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "is_important": forms.CheckboxInput(attrs={"class": "form-check-input"}),

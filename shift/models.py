@@ -38,8 +38,9 @@ class TimeSlot(models.Model):
         verbose_name = "勤務時間"
         verbose_name_plural = "勤務時間"
 
-    group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE, related_name="time_slots",
-                              verbose_name="グループ")
+    group = models.ForeignKey(
+        "custom_auth.Group", on_delete=models.CASCADE, related_name="time_slots", verbose_name="グループ"
+    )
     name = models.CharField("時間帯名", max_length=100)
     start_time = models.TimeField("開始時刻")
     end_time = models.TimeField("終了時刻")
@@ -83,11 +84,11 @@ class OpeningScheduleType(models.Model):
 
     created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
     updated_at = models.DateTimeField("更新日", auto_now=True)
-    group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE, related_name="opening_schedule_types",
-                              verbose_name="グループ")
+    group = models.ForeignKey(
+        "custom_auth.Group", on_delete=models.CASCADE, related_name="opening_schedule_types", verbose_name="グループ"
+    )
     name = models.CharField("区分名", max_length=100)
-    color = models.CharField("表示色", max_length=7, default="#0d6efd",
-                             validators=[SCHEDULE_TYPE_COLOR_VALIDATOR])
+    color = models.CharField("表示色", max_length=7, default="#0d6efd", validators=[SCHEDULE_TYPE_COLOR_VALIDATOR])
     blocks_shift_input = models.BooleanField("シフト入力不可", default=False)
     is_active = models.BooleanField("有効", default=True)
     display_order = models.PositiveSmallIntegerField("表示順", default=100)
@@ -116,11 +117,13 @@ class DateOpeningSchedule(models.Model):
 
     created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
     updated_at = models.DateTimeField("更新日", auto_now=True)
-    group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE, related_name="date_opening_schedules",
-                              verbose_name="グループ")
+    group = models.ForeignKey(
+        "custom_auth.Group", on_delete=models.CASCADE, related_name="date_opening_schedules", verbose_name="グループ"
+    )
     work_date = models.DateField("日付", db_index=True)
-    schedule_type = models.ForeignKey(OpeningScheduleType, on_delete=models.PROTECT,
-                                      related_name="date_opening_schedules", verbose_name="開講区分")
+    schedule_type = models.ForeignKey(
+        OpeningScheduleType, on_delete=models.PROTECT, related_name="date_opening_schedules", verbose_name="開講区分"
+    )
     note = MediumTextField("メモ", default="", blank=True)
     history = HistoricalRecords()
 
@@ -157,13 +160,16 @@ class ShiftEntry(models.Model):
 
     created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
     updated_at = models.DateTimeField("更新日", auto_now=True)
-    group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE, related_name="shift_entries",
-                              verbose_name="グループ")
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="shift_entries",
-                             verbose_name="ユーザー")
+    group = models.ForeignKey(
+        "custom_auth.Group", on_delete=models.CASCADE, related_name="shift_entries", verbose_name="グループ"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="shift_entries", verbose_name="ユーザー"
+    )
     work_date = models.DateField("勤務日", db_index=True)
-    time_slot = models.ForeignKey(TimeSlot, on_delete=models.PROTECT, related_name="shift_entries",
-                                  verbose_name="時間帯")
+    time_slot = models.ForeignKey(
+        TimeSlot, on_delete=models.PROTECT, related_name="shift_entries", verbose_name="時間帯"
+    )
     status = models.CharField("ステータス", max_length=20, choices=STATUS_CHOICES, default=AVAILABLE)
     note = MediumTextField("メモ", default="", blank=True)
     is_draft = models.BooleanField("下書き", default=False, db_index=True)
@@ -171,7 +177,10 @@ class ShiftEntry(models.Model):
 
     def __str__(self):
         return "%s: %s %s [%s]%s" % (
-            self.id, self.work_date, self.time_slot, self.get_status_display(),
+            self.id,
+            self.work_date,
+            self.time_slot,
+            self.get_status_display(),
             " [下書き]" if self.is_draft else "",
         )
 
@@ -193,8 +202,10 @@ class ShiftDeadline(models.Model):
     created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
     updated_at = models.DateTimeField("更新日", auto_now=True)
     group = models.ForeignKey(
-        "custom_auth.Group", on_delete=models.CASCADE,
-        related_name="shift_deadlines", verbose_name="グループ",
+        "custom_auth.Group",
+        on_delete=models.CASCADE,
+        related_name="shift_deadlines",
+        verbose_name="グループ",
     )
     period_start = models.DateField("対象期間 開始日")
     period_end = models.DateField("対象期間 終了日")
@@ -205,9 +216,7 @@ class ShiftDeadline(models.Model):
     history = HistoricalRecords()
 
     def __str__(self):
-        return "%s: %s〜%s (期限 %s)" % (
-            self.group, self.period_start, self.period_end, self.deadline_date
-        )
+        return "%s: %s〜%s (期限 %s)" % (self.group, self.period_start, self.period_end, self.deadline_date)
 
 
 class AttendanceSetting(models.Model):
@@ -219,8 +228,9 @@ class AttendanceSetting(models.Model):
 
     created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
     updated_at = models.DateTimeField("更新日", auto_now=True)
-    group = models.OneToOneField("custom_auth.Group", on_delete=models.CASCADE,
-                                 related_name="attendance_setting", verbose_name="グループ")
+    group = models.OneToOneField(
+        "custom_auth.Group", on_delete=models.CASCADE, related_name="attendance_setting", verbose_name="グループ"
+    )
     is_enabled = models.BooleanField("勤怠管理を利用する", default=False)
     allow_manual_input = models.BooleanField("手動入力を許可", default=True)
     allow_clock_button = models.BooleanField("出退勤ボタンを許可", default=True)
@@ -246,8 +256,9 @@ class WorkType(models.Model):
 
     created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
     updated_at = models.DateTimeField("更新日", auto_now=True)
-    group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE, related_name="work_types",
-                              verbose_name="グループ")
+    group = models.ForeignKey(
+        "custom_auth.Group", on_delete=models.CASCADE, related_name="work_types", verbose_name="グループ"
+    )
     name = models.CharField("仕事内容", max_length=100)
     hourly_rate = models.PositiveIntegerField("時給（円）", default=0)
     is_active = models.BooleanField("有効", default=True)
@@ -288,13 +299,21 @@ class AttendanceRecord(models.Model):
 
     created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
     updated_at = models.DateTimeField("更新日", auto_now=True)
-    group = models.ForeignKey("custom_auth.Group", on_delete=models.CASCADE,
-                              related_name="attendance_records", verbose_name="グループ")
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
-                             related_name="attendance_records", verbose_name="ユーザー")
+    group = models.ForeignKey(
+        "custom_auth.Group", on_delete=models.CASCADE, related_name="attendance_records", verbose_name="グループ"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="attendance_records", verbose_name="ユーザー"
+    )
     work_date = models.DateField("勤務日", db_index=True)
-    work_type = models.ForeignKey(WorkType, on_delete=models.PROTECT, null=True, blank=True,
-                                  related_name="attendance_records", verbose_name="仕事内容")
+    work_type = models.ForeignKey(
+        WorkType,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="attendance_records",
+        verbose_name="仕事内容",
+    )
     # 仕事内容の時給を登録時点で写しておく。時給を変更しても登録済みの勤怠の金額は変わらない
     hourly_rate = models.PositiveIntegerField("時給（円）", null=True, blank=True)
     start_time = models.TimeField("出勤時刻", null=True, blank=True)
@@ -306,7 +325,9 @@ class AttendanceRecord(models.Model):
 
     def __str__(self):
         return "%s: %s %s %s〜%s" % (
-            self.id, self.user, self.work_date,
+            self.id,
+            self.user,
+            self.work_date,
             self.start_time.strftime("%H:%M") if self.start_time else "--:--",
             self.end_time.strftime("%H:%M") if self.end_time else "--:--",
         )
@@ -422,12 +443,14 @@ class SlackNotificationSetting(models.Model):
 
     created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
     updated_at = models.DateTimeField("更新日", auto_now=True)
-    group = models.OneToOneField("custom_auth.Group", on_delete=models.CASCADE,
-                                 related_name="slack_setting", verbose_name="グループ")
+    group = models.OneToOneField(
+        "custom_auth.Group", on_delete=models.CASCADE, related_name="slack_setting", verbose_name="グループ"
+    )
     is_enabled = models.BooleanField("Slack通知を利用する", default=False)
     webhook_url = models.URLField("Incoming Webhook URL", max_length=500, default="", blank=True)
-    mention = models.CharField("メンション", max_length=100, default="", blank=True,
-                               help_text="例: <!here>、<!channel>、<@U01ABCDEFG>")
+    mention = models.CharField(
+        "メンション", max_length=100, default="", blank=True, help_text="例: <!here>、<!channel>、<@U01ABCDEFG>"
+    )
     notify_deadline_reminder = models.BooleanField("提出期限のリマインド", default=True)
     reminder_days_before = models.PositiveSmallIntegerField("リマインドする日数（期限の何日前）", default=3)
     notify_shift_confirmed = models.BooleanField("メンバーのシフト確定", default=False)
