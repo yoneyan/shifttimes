@@ -1,27 +1,53 @@
 name: Release
 
-# v で始まるタグ（例: v1.2.3, v1.3.0-rc.1）を push すると、
+# vX.Y.Z 形式のタグ（例: v1.2.3, プレリリースは v1.3.0-rc.1）を push すると、
 #   1. テストを実行し
 #   2. Docker イメージを GitHub Container Registry (ghcr.io) に公開し
 #   3. 前回タグからの変更点を本文にした GitHub Release を作成する
+# auto-patch-release.yaml からは、まだ存在しないタグ名を渡して呼び出す。
+# その場合は 1〜2 が成功してから、呼び出し元のコミットにタグを作成する。
 on:
   push:
     tags:
-      - "v*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+  workflow_call:
+    inputs:
+      tag:
+        description: "作成するタグ（vX.Y.Z）。呼び出し元のコミットに対して作成する"
+        type: string
+        required: true
+      notes:
+        description: "リリースノートの先頭に追加する本文（Markdown）"
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
+  validate:
+    name: Validate tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate tag format
+        run: |
+          if [[ ! "${RELEASE_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::タグは vX.Y.Z 形式（プレリリースは vX.Y.Z-rc.1 など）にしてください: ${RELEASE_TAG}"
+            exit 1
+          fi
+
   ci:
     name: CI
+    needs: validate
     uses: ./.github/workflows/ci.yaml
     with:
       skip-docker-build: true
@@ -55,10 +81,14 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           # v1.2.3 → 1.2.3 / 1.2 / 1 / latest（プレリリースタグでは latest・1.2・1 は付かない）
+          # 自動パッチリリースではタグがまだないため、value でバージョンを明示する
+          flavor: |
+            latest=false
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+            type=semver,pattern={{version}},value=${{ env.RELEASE_TAG }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.RELEASE_TAG }}
+            type=semver,pattern={{major}},value=${{ env.RELEASE_TAG }},enable=${{ !startsWith(env.RELEASE_TAG, 'v0.') }}
+            type=raw,value=latest,enable=${{ !contains(env.RELEASE_TAG, '-') }}
             type=sha
 
       - name: Build and push Docker image
@@ -87,19 +117,24 @@ jobs:
       - name: Generate release notes
         id: notes
         env:
-          TAG: ${{ github.ref_name }}
+          TARGET: ${{ github.sha }}
           VERSION: ${{ needs.image.outputs.version }}
+          EXTRA_NOTES: ${{ inputs.notes }}
         run: |
           set -euo pipefail
-          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' "${TAG}^" 2>/dev/null || true)
+          PREV_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${TARGET}^" 2>/dev/null || true)
           if [ -n "${PREV_TAG}" ]; then
-            RANGE="${PREV_TAG}..${TAG}"
+            RANGE="${PREV_TAG}..${TARGET}"
             echo "prev_tag=${PREV_TAG}" >> "$GITHUB_OUTPUT"
           else
-            RANGE="${TAG}"
+            RANGE="${TARGET}"
           fi
 
           {
+            if [ -n "${EXTRA_NOTES}" ]; then
+              echo "${EXTRA_NOTES}"
+              echo
+            fi
             echo "## 変更点"
             echo
             if [ -n "${PREV_TAG}" ]; then
@@ -123,16 +158,23 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          TARGET: ${{ github.sha }}
           PREV_TAG: ${{ steps.notes.outputs.prev_tag }}
+          IS_TAG_PUSH: ${{ github.ref_type == 'tag' }}
         run: |
           set -euo pipefail
-          args=(--title "${TAG}" --notes-file release-notes.md --generate-notes --verify-tag)
+          args=(--title "${RELEASE_TAG}" --notes-file release-notes.md --generate-notes)
+          if [ "${IS_TAG_PUSH}" = "true" ]; then
+            args+=(--verify-tag)
+          else
+            # 自動パッチリリース: タグはまだないため、CI とイメージ公開が成功したこの時点で対象コミットに作成する
+            args+=(--target "${TARGET}")
+          fi
           if [ -n "${PREV_TAG}" ]; then
             args+=(--notes-start-tag "${PREV_TAG}")
           fi
           # v1.2.3-rc.1 のようにハイフンを含むタグはプレリリース扱い
-          if [[ "${TAG}" == *-* ]]; then
+          if [[ "${RELEASE_TAG}" == *-* ]]; then
             args+=(--prerelease)
           fi
-          gh release create "${TAG}" "${args[@]}"
+          gh release create "${RELEASE_TAG}" "${args[@]}"

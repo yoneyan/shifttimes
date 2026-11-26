@@ -1,0 +1,88 @@
+name: Auto patch release
+
+# master に push されるたびに、前回の安定版タグ（vX.Y.Z）からの変更を調べ、
+# 次をすべて満たす場合に限り Z を 1 上げたタグでリリースする（release.yaml を呼び出す）。
+#   - 変更が依存ライブラリの更新（uv.lock / pyproject.toml）と、アプリに影響しないファイルだけ
+#   - どの依存もメジャーバージョンが上がっていない（0.x 系はマイナーも対象外）
+#   - 前回タグの DB に対して未適用のマイグレーションがない（ライブラリ同梱のものも含む）
+# 条件を満たさない場合は何もしない（実行結果のサマリに理由を出す）。その場合は手動でタグを作成する。
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # 連続でマージされても、前の判定・リリースが終わってから次を判定する
+  group: auto-patch-release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.check.outputs.release == 'true' && steps.migrations.outputs.pending == 'false' }}
+      tag: ${{ steps.check.outputs.tag }}
+      notes: ${{ steps.check.outputs.notes }}
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v7
+        with:
+          # 前回タグとの差分を取るため、全履歴とタグを取得する
+          fetch-depth: 0
+
+      - name: Set up uv
+        # setup-uv はメジャーバージョンだけのタグ（v10 など）を提供していないため完全なバージョンで固定する
+        uses: astral-sh/setup-uv@v10.4.0
+        with:
+          enable-cache: true
+
+      - name: Check changes since the last release
+        id: check
+        run: python3 .github/scripts/auto_patch_release.py
+
+      - name: Check DB migrations against the last release
+        id: migrations
+        if: steps.check.outputs.release == 'true'
+        env:
+          PREV_TAG: ${{ steps.check.outputs.prev_tag }}
+        run: |
+          set -euo pipefail
+          # 前回タグのコードと依存で DB を作り、現在のコードと依存で未適用のマイグレーションがないかを見る
+          PREV_DIR="${RUNNER_TEMP}/prev"
+          git worktree add --detach "${PREV_DIR}" "${PREV_TAG}"
+          (cd "${PREV_DIR}" && uv sync --locked && uv run --frozen python manage.py migrate --noinput)
+          cp "${PREV_DIR}/db.sqlite3" db.sqlite3
+
+          uv sync --locked
+          if uv run --frozen python manage.py migrate --check; then
+            echo "pending=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "pending=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "## 自動パッチリリースは行いません"
+              echo
+              echo "${PREV_TAG} から DB マイグレーションが増えています（ライブラリ同梱のものを含む）。"
+              echo "内容を確認したうえで、バージョンを手動で決めてタグを作成してください。"
+              echo
+              echo '```'
+              uv run --frozen python manage.py migrate --plan || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  release:
+    name: Release
+    needs: check
+    if: needs.check.outputs.release == 'true'
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/release.yaml
+    with:
+      tag: ${{ needs.check.outputs.tag }}
+      notes: ${{ needs.check.outputs.notes }}
