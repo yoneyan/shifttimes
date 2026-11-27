@@ -215,7 +215,9 @@ def notify_shift_published(group, count, date_from, date_to, setting=None):
     text = "%s\n公開した割り当て: %d件\n確定シフト: %s" % (
         _period_line(date_from, date_to),
         count,
-        _absolute_url(reverse("shift:assignment_member", args=[group.id])),
+        _absolute_url(
+            "%s?month=%s" % (reverse("shift:assignment_member", args=[group.id]), date_from.strftime("%Y-%m"))
+        ),
     )
     return send(setting, "[%s] 確定シフトが公開されました" % group.name_jp, text, color=COLOR_GOOD)
 

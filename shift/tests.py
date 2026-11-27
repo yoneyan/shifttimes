@@ -4,6 +4,7 @@ from io import StringIO
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
@@ -2815,6 +2816,58 @@ class ShiftAssignmentTests(TestCase):
 
         self.assertTrue(TimeSlot.objects.filter(id=self.morning.id).exists())
 
+    def test_nonexistent_date_is_rejected_without_error(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            self.url,
+            {"action": "save", "user_id": self.member.id, "work_date": "2026-02-30", "time_slot": [self.morning.id]},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(ShiftAssignment.objects.exists())
+
+    def test_membership_is_rechecked_inside_transaction(self):
+        # 画面を開いた時点のメンバー一覧にいても、保存時に所属が無ければ割り当てない（削除・脱退との競合）
+        self.client.force_login(self.admin_user)
+
+        with mock.patch("shift.assignment_views._group_members", return_value=[self.outsider]):
+            self._save(self.outsider, self.today, [self.morning])
+
+        self.assertFalse(ShiftAssignment.objects.exists())
+
+    def test_publish_is_recorded_in_history(self):
+        assignment = ShiftAssignment.objects.create(
+            group=self.group, user=self.member, work_date=self.month, time_slot=self.morning
+        )
+        self.client.force_login(self.admin_user)
+
+        with mock.patch("shift.slack.notify_shift_published"):
+            self._publish()
+
+        latest = assignment.history.first()
+        self.assertTrue(latest.is_published)
+        self.assertIsNotNone(latest.published_at)
+
+    def test_assignment_with_slot_of_other_group_is_invalid(self):
+        assignment = ShiftAssignment(
+            group=self.group, user=self.member, work_date=self.today, time_slot=self.foreign_slot
+        )
+
+        with self.assertRaises(ValidationError):
+            assignment.full_clean()
+
+    def test_member_view_ignores_slot_of_other_group(self):
+        ShiftAssignment.objects.create(
+            group=self.group, user=self.member, work_date=self.today, time_slot=self.foreign_slot, is_published=True
+        )
+        self.client.force_login(self.member)
+
+        response = self.client.get(self.member_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["my_days"], [])
+
     def test_publish_notification_text(self):
         setting = SlackNotificationSetting.objects.create(
             group=self.group, is_enabled=True, webhook_url="https://hooks.slack.com/services/T/B/X"
@@ -2825,7 +2878,7 @@ class ShiftAssignmentTests(TestCase):
         title, text = send.call_args.args[1], send.call_args.args[2]
         self.assertIn("確定シフトが公開されました", title)
         self.assertIn("3件", text)
-        self.assertIn(self.member_url, text)
+        self.assertIn("%s?month=%s" % (self.member_url, self.month.strftime("%Y-%m")), text)
 
     def test_publish_notification_can_be_disabled(self):
         setting = SlackNotificationSetting.objects.create(

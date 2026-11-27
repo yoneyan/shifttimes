@@ -101,7 +101,10 @@ def _month_redirect(group, current_month):
 def _save_cell(request, group, members, current_month):
     """1 人 × 1 日の割り当てを、選択された勤務時間の組み合わせに置き換える"""
     target = next((member for member in members if str(member.id) == request.POST.get("user_id", "")), None)
-    work_date = parse_date(request.POST.get("work_date", "") or "")
+    try:
+        work_date = parse_date(request.POST.get("work_date", "") or "")
+    except ValueError:  # 2月30日のように形式は正しくても存在しない日付
+        work_date = None
     if target is None or work_date is None:
         messages.error(request, "対象のメンバーまたは日付が不正です。")
         return _month_redirect(group, current_month)
@@ -114,6 +117,19 @@ def _save_cell(request, group, members, current_month):
     note = request.POST.get("note", "").strip()[:_NOTE_MAX_LENGTH]
 
     with transaction.atomic():
+        # 対象メンバーと操作ユーザーの所属をロックしてから確かめ直す。メンバーの削除・脱退
+        # （custom_auth.views._remove_membership）や、同じメンバーへの同時保存と直列化するため
+        locked = {
+            membership.user_id: membership
+            for membership in UserGroup.objects.select_for_update().filter(
+                group=group, user_id__in={target.id, request.user.id}
+            )
+        }
+        actor = locked.get(request.user.id)
+        if target.id not in locked or not (request.user.is_staff or (actor and actor.is_admin)):
+            messages.error(request, "対象のメンバーがグループに所属していないか、管理者権限がありません。")
+            return _month_redirect(group, current_month)
+
         existing = {
             assignment.time_slot_id: assignment
             for assignment in ShiftAssignment.objects.select_for_update().filter(
@@ -149,12 +165,22 @@ def _save_cell(request, group, members, current_month):
 
 def _publish(request, group, month_from, month_to, current_month):
     """表示中の月の未公開の割り当てを公開する"""
-    count = ShiftAssignment.objects.filter(
-        group=group,
-        work_date__gte=month_from,
-        work_date__lte=month_to,
-        is_published=False,
-    ).update(is_published=True, published_at=timezone.now())
+    now = timezone.now()
+    with transaction.atomic():
+        # update() では変更履歴（simple_history）が残らないので、1 件ずつ保存する
+        targets = list(
+            ShiftAssignment.objects.select_for_update().filter(
+                group=group,
+                work_date__gte=month_from,
+                work_date__lte=month_to,
+                is_published=False,
+            )
+        )
+        for assignment in targets:
+            assignment.is_published = True
+            assignment.published_at = now
+            assignment.save(update_fields=["is_published", "published_at", "updated_at"])
+    count = len(targets)
     if count:
         messages.success(request, "%d件の割り当てを公開しました。" % count)
         slack.notify_shift_published(group, count, month_from, month_to)
@@ -196,7 +222,9 @@ def assignment(request, group_id):
     }
     assignments = defaultdict(dict)
     unpublished_count = 0
-    for item in ShiftAssignment.objects.filter(group=group, work_date__gte=month_from, work_date__lte=month_to):
+    for item in ShiftAssignment.objects.filter(
+        group=group, time_slot__group=group, work_date__gte=month_from, work_date__lte=month_to
+    ):
         assignments[(item.user_id, item.work_date)][item.time_slot_id] = item
         if not item.is_published:
             unpublished_count += 1
@@ -295,7 +323,11 @@ def assignment_member(request, group_id):
 
     published = list(
         ShiftAssignment.objects.filter(
-            group=group, work_date__gte=month_from, work_date__lte=month_to, is_published=True
+            group=group,
+            time_slot__group=group,
+            work_date__gte=month_from,
+            work_date__lte=month_to,
+            is_published=True,
         ).select_related("time_slot")
     )
     time_slots = _time_slots_for_month(group, month_from, month_to, published_only=True)

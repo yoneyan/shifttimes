@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
 from django.utils import timezone
@@ -222,6 +223,12 @@ class ShiftAssignment(models.Model):
     is_published = models.BooleanField("公開済み", default=False, db_index=True)
     published_at = models.DateTimeField("公開日時", blank=True, null=True)
     history = HistoricalRecords()
+
+    def clean(self):
+        super().clean()
+        # 他のグループの勤務時間を割り当てると、表に出せずメンバーの画面が壊れるので受け付けない
+        if self.group_id and self.time_slot_id and self.time_slot.group_id != self.group_id:
+            raise ValidationError({"time_slot": "グループの勤務時間を選んでください。"})
 
     def __str__(self):
         return "%s: %s %s %s%s" % (
