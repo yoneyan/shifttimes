@@ -2965,6 +2965,17 @@ class StaffingRequirementTests(TestCase):
 
         self.assertFalse(StaffingRequirement.objects.exists())
 
+    def test_fields_missing_from_form_are_kept(self):
+        StaffingRequirement.objects.create(group=self.group, time_slot=self.morning, weekday=3, required_count=2)
+        self.client.force_login(self.admin_user)
+
+        self.client.post(self.settings_url, {"action": "staffing", "required_%d_0" % self.morning.id: "1"})
+
+        self.assertEqual(
+            sorted(StaffingRequirement.objects.values_list("weekday", "required_count")),
+            [(0, 1), (3, 2)],
+        )
+
     def test_invalid_value_saves_nothing(self):
         StaffingRequirement.objects.create(group=self.group, time_slot=self.morning, weekday=0, required_count=3)
         self.client.force_login(self.admin_user)
