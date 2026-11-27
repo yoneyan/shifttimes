@@ -263,7 +263,17 @@
         unavailable: ["× 勤務不可", "text-danger"],
       };
 
+      // JavaScript から開くダイアログなので、閉じたら開いたセルへフォーカスを戻す
+      let openedCell = null;
+      modalEl.addEventListener("hidden.bs.modal", function () {
+        if (openedCell) {
+          openedCell.focus();
+          openedCell = null;
+        }
+      });
+
       const open = function (cell) {
+        openedCell = cell;
         const key = cell.dataset.userId + ":" + cell.dataset.date;
         const data = cells[key] || {assigned: [], hopes: {}, note: ""};
         userIdInput.value = cell.dataset.userId;

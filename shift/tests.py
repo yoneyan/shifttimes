@@ -2745,6 +2745,20 @@ class ShiftAssignmentTests(TestCase):
         notify.assert_called_once()
         self.assertEqual(notify.call_args.args[1], 1)
 
+    def test_demoted_admin_cannot_publish(self):
+        ShiftAssignment.objects.create(group=self.group, user=self.member, work_date=self.month, time_slot=self.morning)
+        self.client.force_login(self.admin_user)
+        # 画面の権限チェックは通り、公開処理の中で降格が見つかる状況を作る
+        with (
+            mock.patch("shift.assignment_views._get_group_for_user", return_value=self.group),
+            mock.patch("shift.slack.notify_shift_published") as notify,
+        ):
+            UserGroup.objects.filter(user=self.admin_user, group=self.group).update(is_admin=False)
+            self._publish()
+
+        self.assertFalse(ShiftAssignment.objects.get().is_published)
+        notify.assert_not_called()
+
     def test_publish_without_changes_does_not_notify(self):
         self.client.force_login(self.admin_user)
 

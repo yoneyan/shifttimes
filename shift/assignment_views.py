@@ -168,6 +168,12 @@ def _publish(request, group, month_from, month_to, current_month):
     """表示中の月の未公開の割り当てを公開する"""
     now = timezone.now()
     with transaction.atomic():
+        # 画面を開いたあとに降格・削除された管理者が公開できないよう、所属をロックして確かめ直す
+        if not request.user.is_staff and not (
+            UserGroup.objects.select_for_update().filter(group=group, user=request.user, is_admin=True).exists()
+        ):
+            messages.error(request, "このグループの管理者権限がありません。")
+            return _month_redirect(group, current_month)
         # update() では変更履歴（simple_history）が残らないので、1 件ずつ保存する
         targets = list(
             ShiftAssignment.objects.select_for_update().filter(
