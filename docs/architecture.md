@@ -58,7 +58,7 @@ User ──< UserGroup >── Group
 ```
 Group ──< OpeningScheduleType ──< DateOpeningSchedule
       ──< ShiftDeadline
-      ──< TimeSlot
+      ──< TimeSlot ──< StaffingRequirement
       ──< ShiftEntry >── TimeSlot
       ──< ShiftAssignment >── TimeSlot
       ──< WorkType
@@ -74,6 +74,7 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 | `DateOpeningSchedule` | 日付ごとの開講区分の割り当て |
 | `ShiftEntry` | シフト希望。`(group, user, work_date, time_slot)` が一意。`is_draft` で下書き管理 |
 | `ShiftDeadline` | 対象期間（`period_start`〜`period_end`）と提出期限 |
+| `StaffingRequirement` | 勤務時間 × 曜日ごとの必要人数。`(time_slot, weekday)` が一意。登録がない組み合わせは必要人数なし |
 | `ShiftAssignment` | 管理者が決めた確定シフト。`(group, user, work_date, time_slot)` が一意。`is_published` が真のものだけメンバーに表示 |
 | `AttendanceSetting` | グループごとの勤怠設定（`OneToOne`）。機能の有効・無効と入力方法の許可 |
 | `WorkType` | グループごとの勤怠の仕事内容と時給（円）。`(group, name)` が一意。勤怠が登録済みのものは削除不可（`PROTECT`） |

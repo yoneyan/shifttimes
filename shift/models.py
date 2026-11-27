@@ -186,6 +186,53 @@ class ShiftEntry(models.Model):
         )
 
 
+class StaffingRequirement(models.Model):
+    """勤務時間 × 曜日ごとの必要人数（登録がない組み合わせは必要人数なしとして扱う）"""
+
+    class Meta:
+        ordering = ("time_slot__start_time", "weekday")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("time_slot", "weekday"),
+                name="staffing_requirement_unique_weekday",
+            ),
+        ]
+        verbose_name = "必要人数"
+        verbose_name_plural = "必要人数"
+
+    created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField("更新日", auto_now=True)
+    group = models.ForeignKey(
+        "custom_auth.Group", on_delete=models.CASCADE, related_name="staffing_requirements", verbose_name="グループ"
+    )
+    time_slot = models.ForeignKey(
+        TimeSlot, on_delete=models.CASCADE, related_name="staffing_requirements", verbose_name="勤務時間"
+    )
+    weekday = models.PositiveSmallIntegerField("曜日", choices=WEEKDAY_CHOICES)
+    required_count = models.PositiveSmallIntegerField("必要人数", default=0)
+    history = HistoricalRecords()
+
+    def clean(self):
+        super().clean()
+        # 他のグループの勤務時間に登録すると表に出ず、(time_slot, weekday) の一意制約で相手側の保存も壊れる
+        if self.group_id and self.time_slot_id and self.time_slot.group_id != self.group_id:
+            raise ValidationError({"time_slot": "グループの勤務時間を選んでください。"})
+
+    def __str__(self):
+        return "%s: %s %s曜 %d人" % (self.group, self.time_slot.name, self.get_weekday_display(), self.required_count)
+
+
+def staffing_status(count, required):
+    """人数と必要人数を比べた状態（必要人数が 0 なら判定しない）"""
+    if not required:
+        return ""
+    if count < required:
+        return "short"
+    if count > required:
+        return "over"
+    return "ok"
+
+
 class ShiftAssignment(models.Model):
     """管理者が決めた確定シフト（メンバー × 日付 × 時間帯）
 

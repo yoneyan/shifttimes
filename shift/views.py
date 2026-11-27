@@ -31,7 +31,9 @@ from shift.models import (
     ShiftAssignment,
     ShiftDeadline,
     ShiftEntry,
+    StaffingRequirement,
     TimeSlot,
+    staffing_status,
 )
 
 ACTIVE_GROUP_STATUS = 1
@@ -178,6 +180,27 @@ def _shift_input_is_blocked(group, work_date):
     if opening_schedule is None:
         return False
     return opening_schedule.schedule_type.blocks_shift_input
+
+
+def _required_counts(group, date_headers, time_slots):
+    """日付 × 勤務時間ごとの必要人数。シフト入力不可の開講区分の日は 0 人とする
+
+    date_headers は ``work_date`` と ``is_blocked`` を持つ辞書の並び。
+    """
+    by_weekday = {
+        (requirement.time_slot_id, requirement.weekday): requirement.required_count
+        # 無効にした勤務時間は割り当てを増やせないので、必要人数の登録が残っていても比べない（再び有効にしたら戻る）
+        for requirement in StaffingRequirement.objects.filter(
+            group=group, time_slot__in=time_slots, time_slot__is_active=True
+        )
+    }
+    return {
+        (header["work_date"], time_slot.id): (
+            0 if header["is_blocked"] else by_weekday.get((time_slot.id, header["work_date"].weekday()), 0)
+        )
+        for header in date_headers
+        for time_slot in time_slots
+    }
 
 
 def _open_shift_period(group):
@@ -820,6 +843,63 @@ def _schedule_legend(group):
     return [{"name": st.name, "color": st.color} for st in schedule_types]
 
 
+_MAX_REQUIRED_COUNT = 999
+
+
+def _staffing_field_name(time_slot_id, weekday):
+    return "required_%d_%d" % (time_slot_id, weekday)
+
+
+def _save_staffing_requirements(request, group):
+    """必要人数の表をまとめて保存する。空欄と 0 は「必要人数なし」として登録を消す"""
+    time_slots = list(TimeSlot.objects.filter(group=group, is_active=True))
+    values = {}
+    for time_slot in time_slots:
+        for weekday, _label in WEEKDAY_CHOICES:
+            raw = request.POST.get(_staffing_field_name(time_slot.id, weekday), "").strip()
+            try:
+                value = int(raw) if raw else 0
+            except ValueError:
+                value = -1
+            if not 0 <= value <= _MAX_REQUIRED_COUNT:
+                messages.error(request, "必要人数は 0〜%d の整数で入力してください。" % _MAX_REQUIRED_COUNT)
+                return
+            values[(time_slot, weekday)] = value
+
+    with transaction.atomic():
+        for (time_slot, weekday), value in values.items():
+            if value:
+                StaffingRequirement.objects.update_or_create(
+                    group=group, time_slot=time_slot, weekday=weekday, defaults={"required_count": value}
+                )
+            else:
+                StaffingRequirement.objects.filter(group=group, time_slot=time_slot, weekday=weekday).delete()
+    messages.success(request, "必要人数を保存しました。")
+
+
+def _staffing_rows(group):
+    """必要人数の入力表（有効な勤務時間 × 曜日）"""
+    saved = {
+        (requirement.time_slot_id, requirement.weekday): requirement.required_count
+        for requirement in StaffingRequirement.objects.filter(group=group)
+    }
+    return [
+        {
+            "time_slot": time_slot,
+            "cells": [
+                {
+                    "weekday": weekday,
+                    "label": label,
+                    "name": _staffing_field_name(time_slot.id, weekday),
+                    "value": saved.get((time_slot.id, weekday), 0),
+                }
+                for weekday, label in WEEKDAY_CHOICES
+            ],
+        }
+        for time_slot in TimeSlot.objects.filter(group=group, is_active=True).order_by("start_time", "name")
+    ]
+
+
 @login_required
 def schedule_settings(request, group_id):
     """管理者向けの開講スケジュール設定"""
@@ -849,6 +929,10 @@ def schedule_settings(request, group_id):
         else:
             messages.error(request, "勤務時間を保存できませんでした。%s" % time_slot_form.errors.as_text())
         return redirect("shift:schedule_settings", group_id=group.id)
+
+    if request.method == "POST" and action == "staffing":
+        _save_staffing_requirements(request, group)
+        return redirect("%s#staffing" % reverse("shift:schedule_settings", args=[group.id]))
 
     if request.method == "POST" and action == "schedule_type":
         schedule_type = OpeningScheduleType.objects.filter(
@@ -1000,6 +1084,9 @@ def schedule_settings(request, group_id):
         {
             "group": group,
             "time_slot_rows": time_slot_rows,
+            "staffing_rows": _staffing_rows(group),
+            "weekday_labels": [label for _weekday, label in WEEKDAY_CHOICES],
+            "max_required_count": _MAX_REQUIRED_COUNT,
             "schedule_types": schedule_types,
             "schedule_type_palette": _SCHEDULE_TYPE_PALETTE,
             "default_schedule_type_color": _next_schedule_type_color(group),
@@ -1065,6 +1152,47 @@ def _submission_status(answered_days, target_days):
     if answered_days:
         return "partial", "一部"
     return "none", "未提出"
+
+
+def _summary_day_totals(group, date_headers, time_slots, day_slot_counts):
+    """提出状況の日別合計行。必要人数が設定されていれば勤務可能人数と比べる
+
+    (日別合計, 人数が足りない枠の数, 必要人数の設定があるか) を返す。
+    """
+    required_counts = _required_counts(group, date_headers, time_slots)
+    day_totals = []
+    short_slots = 0
+    for dh in date_headers:
+        slot_counts = []
+        for ts in time_slots:
+            counts = day_slot_counts[(dh["work_date"], ts.id)]
+            required = required_counts[(dh["work_date"], ts.id)]
+            status = staffing_status(counts["available"], required)
+            if status == "short":
+                short_slots += 1
+                # 要相談の人まで含めれば足りるなら、声をかければ埋まる見込みがある
+                if counts["available"] + counts["maybe"] >= required:
+                    status = "short-maybe"
+            slot_counts.append(
+                {
+                    "time_slot": ts,
+                    "available": counts["available"],
+                    "maybe": counts["maybe"],
+                    "required": required,
+                    "status": status,
+                }
+            )
+        day_totals.append(
+            {
+                "work_date": dh["work_date"],
+                "is_saturday": dh["is_saturday"],
+                "is_sunday": dh["is_sunday"],
+                "is_blocked": dh["is_blocked"],
+                "is_today": dh["is_today"],
+                "slot_counts": slot_counts,
+            }
+        )
+    return day_totals, short_slots, any(required_counts.values())
 
 
 @login_required
@@ -1218,26 +1346,7 @@ def summary(request, group_id):
             )
         )
 
-    # 日別の合計行
-    day_totals = []
-    for dh in date_headers:
-        day_totals.append(
-            {
-                "work_date": dh["work_date"],
-                "is_saturday": dh["is_saturday"],
-                "is_sunday": dh["is_sunday"],
-                "is_blocked": dh["is_blocked"],
-                "is_today": dh["is_today"],
-                "slot_counts": [
-                    {
-                        "time_slot": ts,
-                        "available": day_slot_counts[(dh["work_date"], ts.id)]["available"],
-                        "maybe": day_slot_counts[(dh["work_date"], ts.id)]["maybe"],
-                    }
-                    for ts in time_slots
-                ],
-            }
-        )
+    day_totals, short_slots, has_requirements = _summary_day_totals(group, date_headers, time_slots, day_slot_counts)
 
     slot_legend = []
     for index, ts in enumerate(time_slots, start=1):
@@ -1259,6 +1368,8 @@ def summary(request, group_id):
         "none": sum(1 for row in member_rows if row["status"] == "none"),
         "target_days": target_days,
         "blocked_days": days - target_days,
+        "short_slots": short_slots,
+        "has_requirements": has_requirements,
     }
 
     # 期間が暦月ぴったりのときは、前後も暦月単位で移動する（月末が欠けないように）

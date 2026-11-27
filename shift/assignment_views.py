@@ -12,7 +12,7 @@ from django.utils.dateparse import parse_date
 
 from custom_auth.models import UserGroup
 from shift import slack
-from shift.models import ShiftAssignment, ShiftEntry, TimeSlot, minutes_to_hhmm
+from shift.models import ShiftAssignment, ShiftEntry, TimeSlot, minutes_to_hhmm, staffing_status
 from shift.views import (
     _active_time_slots,
     _admin_group_landing,
@@ -22,6 +22,7 @@ from shift.views import (
     _month_from_value,
     _month_nav_context,
     _opening_schedule_map,
+    _required_counts,
     _schedule_legend,
     _today,
 )
@@ -167,6 +168,12 @@ def _publish(request, group, month_from, month_to, current_month):
     """表示中の月の未公開の割り当てを公開する"""
     now = timezone.now()
     with transaction.atomic():
+        # 画面を開いたあとに降格・削除された管理者が公開できないよう、所属をロックして確かめ直す
+        if not request.user.is_staff and not (
+            UserGroup.objects.select_for_update().filter(group=group, user=request.user, is_admin=True).exists()
+        ):
+            messages.error(request, "このグループの管理者権限がありません。")
+            return _month_redirect(group, current_month)
         # update() では変更履歴（simple_history）が残らないので、1 件ずつ保存する
         targets = list(
             ShiftAssignment.objects.select_for_update().filter(
@@ -281,16 +288,26 @@ def assignment(request, group_id):
             }
         )
 
-    day_totals = [
-        {
-            **header,
-            "slot_counts": [
-                {"time_slot": time_slot, "assigned": day_counts[(header["work_date"], time_slot.id)]}
-                for time_slot in time_slots
-            ],
-        }
-        for header in date_headers
-    ]
+    # 日別の割り当て人数を必要人数と比べる
+    required_counts = _required_counts(group, date_headers, time_slots)
+    day_totals = []
+    staffing = {"short": 0, "over": 0}
+    for header in date_headers:
+        slot_counts = []
+        for time_slot in time_slots:
+            key = (header["work_date"], time_slot.id)
+            status = staffing_status(day_counts[key], required_counts[key])
+            if status in staffing:
+                staffing[status] += 1
+            slot_counts.append(
+                {
+                    "time_slot": time_slot,
+                    "assigned": day_counts[key],
+                    "required": required_counts[key],
+                    "status": status,
+                }
+            )
+        day_totals.append({**header, "slot_counts": slot_counts})
 
     context = {
         "group": group,
@@ -307,6 +324,8 @@ def assignment(request, group_id):
         "day_totals": day_totals,
         "cells_payload": cells_payload,
         "unpublished_count": unpublished_count,
+        "staffing": staffing,
+        "has_requirements": any(required_counts.values()),
         "note_max_length": _NOTE_MAX_LENGTH,
         **_month_nav_context(current_month, today),
     }
