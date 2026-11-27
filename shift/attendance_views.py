@@ -621,11 +621,12 @@ def _breakdown_table(member_rows):
 
 
 def _summary_members(group, month_from, month_to):
-    """勤怠集計の対象メンバー（有効なユーザーをユーザー名順に並べ、その後に退会済みのメンバー）
+    """勤怠集計の対象メンバー（有効なユーザーをユーザー名順に並べ、その後に勤怠のあるほかの人）
 
-    グループから外れた人も、その月に勤怠が残っていれば給与計算から漏れないように含める。
-    退会済みの人には ``is_former_member`` を立てる。
+    給与計算から漏れないように、その月に勤怠が残っていれば無効なアカウントの人や、
+    グループから外れた人も含める。グループに所属していない人には ``is_former_member`` を立てる。
     """
+    member_ids = set(UserGroup.objects.filter(group=group).values_list("user_id", flat=True))
     members = [
         membership.user
         for membership in (
@@ -634,19 +635,22 @@ def _summary_members(group, month_from, month_to):
             .order_by("user__username")
         )
     ]
-    member_ids = {member.id for member in members}
-    former_ids = (
+    listed_ids = {member.id for member in members}
+    extra_ids = (
         AttendanceRecord.objects.filter(group=group, work_date__gte=month_from, work_date__lte=month_to)
-        .exclude(user_id__in=member_ids)
+        .exclude(user_id__in=listed_ids)
         .values_list("user_id", flat=True)
         .distinct()
     )
-    former_members = list(get_user_model().objects.filter(id__in=former_ids).order_by("username"))
-    for member in members:
-        member.is_former_member = False
-    for member in former_members:
-        member.is_former_member = True
-    return members + former_members
+    extra_members = list(get_user_model().objects.filter(id__in=extra_ids).order_by("username"))
+    for member in members + extra_members:
+        member.is_former_member = member.id not in member_ids
+    return members + extra_members
+
+
+def _membership_label(is_former_member):
+    """CSV の「所属」列の値"""
+    return "退会済み" if is_former_member else "所属中"
 
 
 @login_required
@@ -783,7 +787,7 @@ def _csv_number(value):
     return "" if value is None else value
 
 
-def _csv_record_rows(records, show_amount):
+def _csv_record_rows(records, show_amount, former_member_ids):
     header = [
         "勤務日",
         "曜日",
@@ -799,7 +803,7 @@ def _csv_record_rows(records, show_amount):
     ]
     if show_amount:
         header += ["時給（円）", "金額（円）"]
-    header += ["入力方法", "メモ"]
+    header += ["入力方法", "メモ", "所属"]
     yield header
 
     for record in records:
@@ -818,7 +822,11 @@ def _csv_record_rows(records, show_amount):
         ]
         if show_amount:
             row += [_csv_number(record.hourly_rate), _csv_number(record.amount)]
-        row += [record.get_source_display(), _csv_text(record.note)]
+        row += [
+            record.get_source_display(),
+            _csv_text(record.note),
+            _membership_label(record.user_id in former_member_ids),
+        ]
         yield row
 
 
@@ -842,6 +850,7 @@ def _csv_member_rows(members, records, work_types, show_amount):
     for key in column_keys:
         name = columns[key].name if columns[key] else "未設定"
         header += [f"{name} 実働（分）"] + ([f"{name} 金額（円）"] if show_amount else [])
+    header.append("所属")
     yield [_csv_text(label) for label in header]
 
     for member, totals in member_totals:
@@ -860,6 +869,7 @@ def _csv_member_rows(members, records, work_types, show_amount):
             row.append(item["minutes"] if item else 0)
             if show_amount:
                 row.append(_csv_number(item["amount"]) if item else 0)
+        row.append(_membership_label(member.is_former_member))
         yield row
 
 
@@ -897,7 +907,8 @@ def attendance_summary_csv(request, group_id):
     show_amount = bool(work_types)
 
     if kind == "records":
-        rows = _csv_record_rows(records, show_amount)
+        former_member_ids = {member.id for member in members if member.is_former_member}
+        rows = _csv_record_rows(records, show_amount, former_member_ids)
     else:
         rows = _csv_member_rows(members, records, work_types, show_amount)
 

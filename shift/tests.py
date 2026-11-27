@@ -2033,11 +2033,32 @@ class AttendanceCsvTests(TestCase):
         )
         _, rows = self._download("members")
 
+        _, record_rows = self._download("records")
+
         former = [row["member"] for row in summary.context["member_rows"] if row["member"].id == self.user.id]
         self.assertEqual(len(former), 1)
         self.assertTrue(former[0].is_former_member)
         self.assertContains(summary, "退会済み")
-        self.assertIn("user", [row[0] for row in rows[1:]])
+        self.assertIn(["user", "退会済み"], [[row[0], row[-1]] for row in rows[1:]])
+        self.assertEqual(record_rows[1][-1], "退会済み")
+
+    def test_inactive_member_with_records_is_listed_but_not_former(self):
+        self._create(self.user, self.month_first, time(9, 0), time(12, 0), self.lesson)
+        self.user.is_active = False
+        self.user.save()
+        self.client.force_login(self.admin_user)
+
+        summary = self.client.get(
+            reverse("shift:attendance_summary", args=[self.group.id]),
+            {"month": self.month_first.strftime("%Y-%m")},
+        )
+        _, rows = self._download("members")
+
+        listed = [row["member"] for row in summary.context["member_rows"] if row["member"].id == self.user.id]
+        self.assertEqual(len(listed), 1)
+        self.assertFalse(listed[0].is_former_member)
+        self.assertNotContains(summary, "退会済み")
+        self.assertIn(["user", "所属中"], [[row[0], row[-1]] for row in rows[1:]])
 
     def test_former_member_without_records_is_not_listed(self):
         UserGroup.objects.filter(user=self.user, group=self.group).delete()
@@ -2092,6 +2113,7 @@ class AttendanceCsvTests(TestCase):
                 "金額（円）",
                 "入力方法",
                 "メモ",
+                "所属",
             ],
         )
         self.assertEqual(len(rows), 3)
@@ -2113,6 +2135,7 @@ class AttendanceCsvTests(TestCase):
                 "4500",
                 "手動入力",
                 "午前",
+                "所属中",
             ],
         )
         self.assertEqual(rows[2][4:13], ["事務", "22:00", "01:30", "○", "30", "3:00", "180", "1100", "3300"])
@@ -2147,10 +2170,13 @@ class AttendanceCsvTests(TestCase):
                 "授業 金額（円）",
                 "事務 実働（分）",
                 "事務 金額（円）",
+                "所属",
             ],
         )
-        self.assertEqual(rows[1], ["admin", "管理 太郎", "0", "0:00", "0", "0", "0", "0", "0", "0"])
-        self.assertEqual(rows[2], ["user", "山田 花子", "2", "4:30", "270", "6150", "180", "4500", "90", "1650"])
+        self.assertEqual(rows[1], ["admin", "管理 太郎", "0", "0:00", "0", "0", "0", "0", "0", "0", "所属中"])
+        self.assertEqual(
+            rows[2], ["user", "山田 花子", "2", "4:30", "270", "6150", "180", "4500", "90", "1650", "所属中"]
+        )
 
     def test_csv_without_work_types_has_no_amount_columns(self):
         WorkType.objects.all().delete()
@@ -2161,7 +2187,7 @@ class AttendanceCsvTests(TestCase):
         _response, member_rows = self._download("members")
 
         self.assertNotIn("金額（円）", record_rows[0])
-        self.assertEqual(member_rows[0], ["ユーザー名", "氏名", "勤務日数", "実働（時:分）", "実働（分）"])
+        self.assertEqual(member_rows[0], ["ユーザー名", "氏名", "勤務日数", "実働（時:分）", "実働（分）", "所属"])
 
     def test_csv_escapes_text_that_looks_like_a_formula(self):
         self._create(self.user, self.month_first, time(9, 0), time(12, 0), self.lesson, note="=HYPERLINK(1)")
@@ -2169,7 +2195,7 @@ class AttendanceCsvTests(TestCase):
 
         _response, rows = self._download("records")
 
-        self.assertEqual(rows[1][-1], "'=HYPERLINK(1)")
+        self.assertEqual(rows[1][-2], "'=HYPERLINK(1)")
 
     def test_summary_page_links_to_csv(self):
         self.client.force_login(self.admin_user)

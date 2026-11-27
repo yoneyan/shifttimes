@@ -231,6 +231,77 @@ class MembershipRemovalTests(TestCase):
 
         self.assertTemplateUsed(response, "error.html")
 
+    def test_demoted_admin_cannot_remove_members(self):
+        # 確認画面を開いた後に降格された管理者の POST は通さない
+        self.client.force_login(self.admin_user)
+        self.client.get(self._remove_url(self.member_group))
+        self.admin_group.is_admin = False
+        self.admin_group.save()
+
+        self.client.post(self._remove_url(self.member_group))
+
+        self.assertTrue(UserGroup.objects.filter(id=self.member_group.id).exists())
+
+    def test_remove_rechecks_admin_inside_transaction(self):
+        from custom_auth.views import MembershipChangeError, _remove_membership
+
+        self.admin_group.is_admin = False
+        self.admin_group.save()
+
+        with self.assertRaises(MembershipChangeError):
+            _remove_membership(self.member_group.id, self.group.id, actor_id=self.admin_user.id)
+        self.assertTrue(UserGroup.objects.filter(id=self.member_group.id).exists())
+
+    def test_last_admin_cannot_be_demoted(self):
+        from custom_auth.views import MembershipChangeError, _change_admin_role
+
+        self.member_group.is_admin = True
+        self.member_group.save()
+        UserGroup.objects.filter(id=self.admin_group.id).delete()
+
+        with self.assertRaises(MembershipChangeError):
+            _change_admin_role(self.member_group.id, self.group.id, self.member.id, make_admin=False)
+        self.member_group.refresh_from_db()
+        self.assertTrue(self.member_group.is_admin)
+
+    def test_admin_cannot_change_own_role(self):
+        self.member_group.is_admin = True
+        self.member_group.save()
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse("custom_auth_group:permission", args=[self.group.id]), {"id": self.admin_group.id, "no_admin": ""}
+        )
+
+        self.assertContains(response, "自分の権限は変更できません")
+        self.admin_group.refresh_from_db()
+        self.assertTrue(self.admin_group.is_admin)
+
+    def test_admin_can_demote_other_admin(self):
+        self.member_group.is_admin = True
+        self.member_group.save()
+        self.client.force_login(self.admin_user)
+
+        self.client.post(
+            reverse("custom_auth_group:permission", args=[self.group.id]),
+            {"id": self.member_group.id, "no_admin": ""},
+        )
+
+        self.member_group.refresh_from_db()
+        self.assertFalse(self.member_group.is_admin)
+
+    def test_permission_change_rejects_membership_of_other_group(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse("custom_auth_group:permission", args=[self.group.id]),
+            {"id": self.outsider_group.id, "no_admin": ""},
+        )
+
+        self.assertContains(response, "対象のメンバーが見つかりません")
+        self.outsider_group.refresh_from_db()
+        self.assertTrue(self.outsider_group.is_admin)
+
     def test_members_page_shows_remove_button_only_to_admin(self):
         url = reverse("custom_auth_group:members", args=[self.group.id])
         remove_url = self._remove_url(self.member_group)
