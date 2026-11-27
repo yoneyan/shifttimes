@@ -212,6 +212,12 @@ class StaffingRequirement(models.Model):
     required_count = models.PositiveSmallIntegerField("必要人数", default=0)
     history = HistoricalRecords()
 
+    def clean(self):
+        super().clean()
+        # 他のグループの勤務時間に登録すると表に出ず、(time_slot, weekday) の一意制約で相手側の保存も壊れる
+        if self.group_id and self.time_slot_id and self.time_slot.group_id != self.group_id:
+            raise ValidationError({"time_slot": "グループの勤務時間を選んでください。"})
+
     def __str__(self):
         return "%s: %s %s曜 %d人" % (self.group, self.time_slot.name, self.get_weekday_display(), self.required_count)
 

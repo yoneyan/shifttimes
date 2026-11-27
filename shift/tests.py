@@ -3041,6 +3041,31 @@ class StaffingRequirementTests(TestCase):
         self.assertEqual((total["assigned"], total["required"], total["status"]), (2, 1, "over"))
         self.assertGreaterEqual(response.context["staffing"]["over"], 1)
 
+    def test_inactive_slot_is_not_compared(self):
+        self._require(self.month, 2)
+        self.morning.is_active = False
+        self.morning.save()
+        ShiftAssignment.objects.create(group=self.group, user=self.member, work_date=self.month, time_slot=self.morning)
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(
+            reverse("shift:assignment", args=[self.group.id]), {"month": self.month.strftime("%Y-%m")}
+        )
+
+        total = self._slot_total(response, self.month)
+        self.assertEqual((total["required"], total["status"]), (0, ""))
+        self.assertTrue(StaffingRequirement.objects.exists())
+
+    def test_requirement_with_slot_of_other_group_is_invalid(self):
+        other_group = Group.objects.create(name="other-shop", name_jp="別店舗")
+        foreign_slot = TimeSlot.objects.create(
+            group=other_group, name="早番", start_time=time(9, 0), end_time=time(13, 0)
+        )
+        requirement = StaffingRequirement(group=self.group, time_slot=foreign_slot, weekday=0, required_count=1)
+
+        with self.assertRaises(ValidationError):
+            requirement.full_clean()
+
     def test_no_requirements_hides_comparison(self):
         self.client.force_login(self.admin_user)
 

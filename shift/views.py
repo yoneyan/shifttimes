@@ -189,7 +189,10 @@ def _required_counts(group, date_headers, time_slots):
     """
     by_weekday = {
         (requirement.time_slot_id, requirement.weekday): requirement.required_count
-        for requirement in StaffingRequirement.objects.filter(group=group, time_slot__in=time_slots)
+        # 無効にした勤務時間は割り当てを増やせないので、必要人数の登録が残っていても比べない（再び有効にしたら戻る）
+        for requirement in StaffingRequirement.objects.filter(
+            group=group, time_slot__in=time_slots, time_slot__is_active=True
+        )
     }
     return {
         (header["work_date"], time_slot.id): (
