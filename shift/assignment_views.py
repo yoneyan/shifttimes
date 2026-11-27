@@ -1,6 +1,7 @@
 """確定シフト（管理者によるシフトの割り当てと公開、メンバー向けの閲覧）"""
 
 from collections import defaultdict
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth import get_user_model
@@ -438,12 +439,14 @@ def assignment_compare(request, group_id):
             is_published=True,
         ).select_related("time_slot")
     )
-    records = list(
-        AttendanceRecord.objects.filter(group=group, work_date__gte=month_from, work_date__lte=month_to).select_related(
-            "work_type"
-        )
+    # 前月末の夜から続く勤務が月初の早朝のシフトに重なることがあるので、前日の勤怠も比べる
+    nearby_records = list(
+        AttendanceRecord.objects.filter(
+            group=group, work_date__gte=month_from - timedelta(days=1), work_date__lte=month_to
+        ).select_related("work_type")
     )
-    discrepancies = compare.compare(assignments, records, today, grace)
+    records = [record for record in nearby_records if record.work_date >= month_from]
+    discrepancies = compare.compare(assignments, nearby_records, today, grace, month_from, month_to)
 
     # 食い違いの集計は、グループから外れた人も含めて予定か実績のある全員を対象にする
     member_ids = set(UserGroup.objects.filter(group=group).values_list("user_id", flat=True))
