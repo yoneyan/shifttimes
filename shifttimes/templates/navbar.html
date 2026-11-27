@@ -36,6 +36,7 @@
       <ul class="dropdown-menu dropdown-menu-lg-end" aria-labelledby="adminMenu">
         {% if has_shift_admin_groups %}
           <li><a class="dropdown-item" href="{% url 'shift:summary_index' %}">シフト提出状況</a></li>
+          <li><a class="dropdown-item" href="{% url 'shift:assignment_index' %}">シフト作成</a></li>
           <li><a class="dropdown-item" href="{% url 'shift:schedule_index' %}">開講スケジュール設定</a></li>
           <li><a class="dropdown-item" href="{% url 'shift:attendance_admin_index' %}">勤怠集計・設定</a></li>
         {% endif %}

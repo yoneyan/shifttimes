@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import attendance_views, views
+from . import assignment_views, attendance_views, views
 
 app_name = "shift"
 urlpatterns = [
@@ -19,6 +19,9 @@ urlpatterns = [
     path("schedule/<int:group_id>/slack/", views.slack_settings, name="slack_settings"),
     path("summary/", views.summary_index, name="summary_index"),
     path("summary/<int:group_id>/", views.summary, name="summary"),
+    path("assignment/", assignment_views.assignment_index, name="assignment_index"),
+    path("assignment/<int:group_id>/", assignment_views.assignment, name="assignment"),
+    path("assignment/<int:group_id>/view/", assignment_views.assignment_member, name="assignment_member"),
     path("attendance/", attendance_views.attendance_index, name="attendance_index"),
     path("attendance/admin/", attendance_views.attendance_admin_index, name="attendance_admin_index"),
     path("attendance/<int:group_id>/", attendance_views.attendance, name="attendance"),

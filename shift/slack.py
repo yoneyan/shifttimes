@@ -206,6 +206,22 @@ def notify_schedule_changed(group, dates, schedule_type_name, setting=None):
     return send(setting, "[%s] 開講スケジュールが変更されました" % group.name_jp, text, color=COLOR_INFO, mention=False)
 
 
+def notify_shift_published(group, count, date_from, date_to, setting=None):
+    """確定シフトの公開を知らせる"""
+    setting = setting or get_setting(group)
+    if not setting.notify_shift_published:
+        return False, "確定シフト公開の通知が無効です。"
+
+    text = "%s\n公開した割り当て: %d件\n確定シフト: %s" % (
+        _period_line(date_from, date_to),
+        count,
+        _absolute_url(
+            "%s?month=%s" % (reverse("shift:assignment_member", args=[group.id]), date_from.strftime("%Y-%m"))
+        ),
+    )
+    return send(setting, "[%s] 確定シフトが公開されました" % group.name_jp, text, color=COLOR_GOOD)
+
+
 def notify_test(group, setting=None):
     """設定画面からのテスト送信"""
     setting = setting or get_setting(group)

@@ -60,6 +60,7 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
       ──< ShiftDeadline
       ──< TimeSlot
       ──< ShiftEntry >── TimeSlot
+      ──< ShiftAssignment >── TimeSlot
       ──< WorkType
       ──< AttendanceRecord >── WorkType
       ──1 AttendanceSetting
@@ -73,6 +74,7 @@ Group ──< OpeningScheduleType ──< DateOpeningSchedule
 | `DateOpeningSchedule` | 日付ごとの開講区分の割り当て |
 | `ShiftEntry` | シフト希望。`(group, user, work_date, time_slot)` が一意。`is_draft` で下書き管理 |
 | `ShiftDeadline` | 対象期間（`period_start`〜`period_end`）と提出期限 |
+| `ShiftAssignment` | 管理者が決めた確定シフト。`(group, user, work_date, time_slot)` が一意。`is_published` が真のものだけメンバーに表示 |
 | `AttendanceSetting` | グループごとの勤怠設定（`OneToOne`）。機能の有効・無効と入力方法の許可 |
 | `WorkType` | グループごとの勤怠の仕事内容と時給（円）。`(group, name)` が一意。勤怠が登録済みのものは削除不可（`PROTECT`） |
 | `AttendanceRecord` | 勤怠 1 件。同じ日に何件でも登録できる（時間帯の重なりはフォームで弾く）。`work_type` と、その時点の時給を写した `hourly_rate` を持つ |
