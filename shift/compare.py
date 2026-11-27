@@ -50,7 +50,7 @@ def _record_span(record):
     """勤怠の (出勤, 退勤) を通しの分で返す。比べようのない勤怠は None
 
     出勤がない勤怠と、出勤と退勤が同じ時刻（勤務した時間がない）勤怠は対象にしない。
-    退勤が未記録（勤務中）なら退勤は None。日をまたぐ退勤は翌日の時刻になる。
+    退勤が未記録なら退勤は None。日をまたぐ退勤は翌日の時刻になる。
     """
     span = record.minute_range
     if span is None:
@@ -61,12 +61,32 @@ def _record_span(record):
     return _timeline(record.work_date, start), None if end is None else _timeline(record.work_date, end)
 
 
+def _bound_open_records(spans):
+    """退勤が未記録の勤怠が、後の日のシフトまで覆ってしまわないように区切る
+
+    spans は 1 人ぶんの (勤怠, (出勤, 退勤)) の並び。(勤怠, (出勤, 退勤, 覆う上限)) にして返す。
+    - 後に別の勤怠があれば退勤の打刻漏れとみなし、勤務日の 24:00 か次の出勤の早いほうで
+      退勤したものとして扱う（いつまで働いたか分からないので、翌日のシフトは覆わない）
+    - 後に勤怠がなければ勤務中として退勤は None のまま（早退は判定しない）。ただし覆うのは
+      勤務日の翌日いっぱい（日をまたぐ勤務の分）までにする
+    """
+    spans = sorted(spans, key=lambda item: item[1][0])
+    bounded = []
+    for index, (record, (start, end)) in enumerate(spans):
+        limit = end
+        if end is None:
+            next_start = spans[index + 1][1][0] if index + 1 < len(spans) else None
+            if next_start is not None:
+                end = limit = min(next_start, (record.work_date.toordinal() + 1) * _MINUTES_PER_DAY)
+            else:
+                limit = (record.work_date.toordinal() + 2) * _MINUTES_PER_DAY
+        bounded.append((record, (start, end, limit)))
+    return bounded
+
+
 def _overlaps(record_span, slot_start, slot_end):
-    start, end = record_span
-    if end is None:
-        # 勤務中（退勤が未記録）の勤怠は、出勤した時刻からずっと続いているものとして扱う
-        return start < slot_end
-    return start < slot_end and end > slot_start
+    start, _end, limit = record_span
+    return start < slot_end and limit > slot_start
 
 
 def _compare_assignment(assignment, record_spans, today, grace_minutes):
@@ -99,14 +119,19 @@ def compare(assignments, records, today, grace_minutes, date_from=None, date_to=
     - シフト外勤務: どの確定シフトにも重ならない勤怠
 
     勤怠は日付をまたいだ通しの時間で比べるので、前日の夜から続く勤務も翌日の早朝のシフトに重なる。
-    そのために records には対象期間の前日の勤怠も渡し、シフト外勤務は date_from〜date_to の勤務日の
-    勤怠だけを返す（未指定なら渡した勤怠すべて）。
+    そのために records には対象期間の前日の勤怠を、assignments には翌日のシフトも渡し、食い違いは
+    date_from〜date_to の勤務日のものだけを返す（未指定なら渡したものすべて）。
     """
-    spans_by_user = defaultdict(list)
+
+    def in_range(work_date):
+        return (date_from is None or work_date >= date_from) and (date_to is None or work_date <= date_to)
+
+    raw_spans = defaultdict(list)
     for record in records:
         span = _record_span(record)
         if span is not None:
-            spans_by_user[record.user_id].append((record, span))
+            raw_spans[record.user_id].append((record, span))
+    spans_by_user = {user_id: _bound_open_records(spans) for user_id, spans in raw_spans.items()}
 
     results = []
     matched = set()
@@ -114,15 +139,14 @@ def compare(assignments, records, today, grace_minutes, date_from=None, date_to=
         found, matched_ids = _compare_assignment(
             assignment, spans_by_user.get(assignment.user_id, []), today, grace_minutes
         )
-        results.extend(found)
+        # 対象期間の外のシフト（月末の勤怠と重なる翌月 1 日のシフトなど）は、勤怠との照合にだけ使う
+        if in_range(assignment.work_date):
+            results.extend(found)
         matched |= matched_ids
 
     for spans in spans_by_user.values():
         for record, _span in spans:
-            in_range = (date_from is None or record.work_date >= date_from) and (
-                date_to is None or record.work_date <= date_to
-            )
-            if in_range and record.id not in matched:
+            if in_range(record.work_date) and record.id not in matched:
                 results.append(Discrepancy(UNSCHEDULED, record.user_id, record.work_date, record=record))
 
     kind_rank = {kind: index for index, kind in enumerate(KIND_ORDER)}

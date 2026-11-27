@@ -3209,6 +3209,33 @@ class ShiftCompareTests(TestCase):
         # 前月末の勤怠で月初のシフトを満たし、前月の勤怠はシフト外勤務としても出さない
         self.assertEqual(response.context["discrepancies"], [])
 
+    def test_stale_open_record_does_not_hide_later_lateness(self):
+        next_day = self.day + timedelta(days=1)
+        self._assign(next_day, self.morning)
+        self._record(self.day, time(10, 0), None)
+        self._record(next_day, time(9, 30), time(12, 30))
+
+        self.assertEqual(self._kinds(grace=0), [("unscheduled", 0), ("late", 30), ("early", 30)])
+
+    def test_stale_open_record_does_not_hide_absence_days_later(self):
+        later = self.day + timedelta(days=3)
+        self._assign(later, self.morning)
+        self._record(self.day, time(10, 0), None)
+
+        self.assertEqual(self._kinds(), [("unscheduled", 0), ("absent", 0)])
+
+    def test_month_end_overnight_record_matches_next_month_shift(self):
+        early = TimeSlot.objects.create(group=self.group, name="早朝", start_time=time(0, 0), end_time=time(2, 0))
+        last = date(2026, 3, 31)
+        self._assign(last + timedelta(days=1), early)
+        self._record(last, time(23, 0), time(2, 0))
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.url, {"month": "2026-03"})
+
+        self.assertEqual(response.context["discrepancies"], [])
+        self.assertEqual(response.context["member_rows"][0]["shift_count"], 0)
+
     def test_page_requires_admin(self):
         self.client.force_login(self.member)
 

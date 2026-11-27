@@ -430,15 +430,17 @@ def assignment_compare(request, group_id):
     grace = _grace_minutes(request.GET.get("grace"))
 
     # メンバーに見せていない（未公開の）割り当ては予定として扱わない
-    assignments = list(
+    # 月末の夜から続く勤務が翌月 1 日の早朝のシフトに重なることがあるので、翌日のシフトも照合に使う
+    nearby_assignments = list(
         ShiftAssignment.objects.filter(
             group=group,
             time_slot__group=group,
             work_date__gte=month_from,
-            work_date__lte=month_to,
+            work_date__lte=month_to + timedelta(days=1),
             is_published=True,
         ).select_related("time_slot")
     )
+    assignments = [assignment for assignment in nearby_assignments if assignment.work_date <= month_to]
     # 前月末の夜から続く勤務が月初の早朝のシフトに重なることがあるので、前日の勤怠も比べる
     nearby_records = list(
         AttendanceRecord.objects.filter(
@@ -446,7 +448,7 @@ def assignment_compare(request, group_id):
         ).select_related("work_type")
     )
     records = [record for record in nearby_records if record.work_date >= month_from]
-    discrepancies = compare.compare(assignments, nearby_records, today, grace, month_from, month_to)
+    discrepancies = compare.compare(nearby_assignments, nearby_records, today, grace, month_from, month_to)
 
     # 食い違いの集計は、グループから外れた人も含めて予定か実績のある全員を対象にする
     member_ids = set(UserGroup.objects.filter(group=group).values_list("user_id", flat=True))
