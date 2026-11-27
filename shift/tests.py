@@ -3252,6 +3252,22 @@ class ShiftCompareTests(TestCase):
         )
         self.assertEqual(response.context["member_rows"][0]["count_list"], [0, 0, 0, 1])
 
+    def test_month_end_bound_ignores_records_that_cannot_be_compared(self):
+        early = TimeSlot.objects.create(group=self.group, name="早朝", start_time=time(0, 0), end_time=time(2, 0))
+        last = date(2026, 3, 31)
+        self._assign(last + timedelta(days=1), early)
+        stale = self._record(last, time(23, 0), None)
+        self._record(last, time(23, 30), time(23, 30))  # 勤務時間 0 分は最後の勤怠として扱わない
+        self._record(last + timedelta(days=1), time(8, 0), time(8, 0))  # 翌月の最初の勤怠としても扱わない
+        self._record(last + timedelta(days=1), time(9, 0), time(12, 0))
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.url, {"month": "2026-03"})
+
+        self.assertEqual(
+            [(item.kind, item.record.id) for item in response.context["discrepancies"]], [("unscheduled", stale.id)]
+        )
+
     def test_page_requires_admin(self):
         self.client.force_login(self.member)
 

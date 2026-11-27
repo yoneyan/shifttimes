@@ -426,20 +426,26 @@ def _following_records(group, records, date_to):
     退勤の打刻漏れかどうかは「後に別の勤怠があるか」で決める（compare._bound_open_records）。
     期間の最後の勤怠が退勤未記録なら、翌月の勤怠も見ないと勤務中とみなして翌月 1 日のシフトまで
     覆ってしまうので、照合のためだけに次の勤怠を読み込む（一覧や件数には使わない）。
+    最後・最初の勤怠は、比較に使える（compare.record_span が None でない）ものの中から選ぶ。
     """
     last_by_user = {}
-    for record in sorted(records, key=lambda item: (item.work_date, item.start_time is None, item.start_time)):
-        last_by_user[record.user_id] = record
-    following = []
-    for user_id, last in last_by_user.items():
-        if last.start_time is None or last.end_time is not None:
+    for record in records:
+        span = compare.record_span(record)
+        if span is None:
             continue
-        next_record = (
+        current = last_by_user.get(record.user_id)
+        if current is None or span[0] > current[0]:
+            last_by_user[record.user_id] = span
+    following = []
+    for user_id, span in last_by_user.items():
+        if span[1] is not None:
+            continue
+        later = (
             AttendanceRecord.objects.filter(group=group, user_id=user_id, work_date__gt=date_to)
             .exclude(start_time=None)
-            .order_by("work_date", "start_time")
-            .first()
+            .order_by("work_date", "start_time", "id")
         )
+        next_record = next((record for record in later.iterator() if compare.record_span(record) is not None), None)
         if next_record is not None:
             following.append(next_record)
     return following

@@ -46,7 +46,7 @@ def _slot_span(assignment):
     return _timeline(assignment.work_date, start), _timeline(assignment.work_date, end)
 
 
-def _record_span(record):
+def record_span(record):
     """勤怠の (出勤, 退勤) を通しの分で返す。比べようのない勤怠は None
 
     出勤がない勤怠と、出勤と退勤が同じ時刻（勤務した時間がない）勤怠は対象にしない。
@@ -84,8 +84,8 @@ def _bound_open_records(spans):
     return bounded
 
 
-def _overlaps(record_span, slot_start, slot_end):
-    start, _end, limit = record_span
+def _overlaps(span, slot_start, slot_end):
+    start, _end, limit = span
     return start < slot_end and limit > slot_start
 
 
@@ -128,7 +128,7 @@ def compare(assignments, records, today, grace_minutes, date_from=None, date_to=
 
     raw_spans = defaultdict(list)
     for record in records:
-        span = _record_span(record)
+        span = record_span(record)
         if span is not None:
             raw_spans[record.user_id].append((record, span))
     spans_by_user = {user_id: _bound_open_records(spans) for user_id, spans in raw_spans.items()}
