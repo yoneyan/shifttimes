@@ -3236,6 +3236,22 @@ class ShiftCompareTests(TestCase):
         self.assertEqual(response.context["discrepancies"], [])
         self.assertEqual(response.context["member_rows"][0]["shift_count"], 0)
 
+    def test_month_end_open_record_is_bounded_by_next_month_record(self):
+        early = TimeSlot.objects.create(group=self.group, name="早朝", start_time=time(0, 0), end_time=time(2, 0))
+        last = date(2026, 3, 31)
+        self._assign(last + timedelta(days=1), early)
+        stale = self._record(last, time(23, 0), None)
+        self._record(last + timedelta(days=1), time(9, 0), time(12, 0))
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.url, {"month": "2026-03"})
+
+        # 翌月の出勤があるので 3/31 の勤怠は打刻漏れ。4/1 のシフトは覆わず、3 月のシフト外勤務になる
+        self.assertEqual(
+            [(item.kind, item.record.id) for item in response.context["discrepancies"]], [("unscheduled", stale.id)]
+        )
+        self.assertEqual(response.context["member_rows"][0]["count_list"], [0, 0, 0, 1])
+
     def test_page_requires_admin(self):
         self.client.force_login(self.member)
 

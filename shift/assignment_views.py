@@ -420,6 +420,31 @@ def _grace_minutes(value):
     return minutes if minutes in GRACE_OPTIONS else DEFAULT_GRACE_MINUTES
 
 
+def _following_records(group, records, date_to):
+    """退勤が未記録のまま対象期間が終わるメンバーについて、期間後の最初の勤怠を返す
+
+    退勤の打刻漏れかどうかは「後に別の勤怠があるか」で決める（compare._bound_open_records）。
+    期間の最後の勤怠が退勤未記録なら、翌月の勤怠も見ないと勤務中とみなして翌月 1 日のシフトまで
+    覆ってしまうので、照合のためだけに次の勤怠を読み込む（一覧や件数には使わない）。
+    """
+    last_by_user = {}
+    for record in sorted(records, key=lambda item: (item.work_date, item.start_time is None, item.start_time)):
+        last_by_user[record.user_id] = record
+    following = []
+    for user_id, last in last_by_user.items():
+        if last.start_time is None or last.end_time is not None:
+            continue
+        next_record = (
+            AttendanceRecord.objects.filter(group=group, user_id=user_id, work_date__gt=date_to)
+            .exclude(start_time=None)
+            .order_by("work_date", "start_time")
+            .first()
+        )
+        if next_record is not None:
+            following.append(next_record)
+    return following
+
+
 @login_required
 def assignment_compare(request, group_id):
     """管理者向けの予実比較（公開済みの確定シフトと勤怠の食い違い）"""
@@ -448,6 +473,7 @@ def assignment_compare(request, group_id):
         ).select_related("work_type")
     )
     records = [record for record in nearby_records if record.work_date >= month_from]
+    nearby_records += _following_records(group, nearby_records, month_to)
     discrepancies = compare.compare(nearby_assignments, nearby_records, today, grace, month_from, month_to)
 
     # 食い違いの集計は、グループから外れた人も含めて予定か実績のある全員を対象にする
