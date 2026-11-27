@@ -185,6 +185,54 @@ class ShiftEntry(models.Model):
         )
 
 
+class ShiftAssignment(models.Model):
+    """管理者が決めた確定シフト（メンバー × 日付 × 時間帯）
+
+    管理者が割り当てた時点では未公開で、公開するとメンバーに見えるようになる。
+    """
+
+    class Meta:
+        ordering = ("work_date", "time_slot__start_time")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("group", "user", "work_date", "time_slot"),
+                name="shift_assignment_unique_time_slot",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("group", "work_date")),
+            models.Index(fields=("user", "work_date")),
+        ]
+        verbose_name = "確定シフト"
+        verbose_name_plural = "確定シフト"
+
+    created_at = models.DateTimeField("作成日", default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField("更新日", auto_now=True)
+    group = models.ForeignKey(
+        "custom_auth.Group", on_delete=models.CASCADE, related_name="shift_assignments", verbose_name="グループ"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="shift_assignments", verbose_name="ユーザー"
+    )
+    work_date = models.DateField("勤務日", db_index=True)
+    time_slot = models.ForeignKey(
+        TimeSlot, on_delete=models.PROTECT, related_name="shift_assignments", verbose_name="時間帯"
+    )
+    note = models.CharField("メモ", max_length=200, default="", blank=True)
+    is_published = models.BooleanField("公開済み", default=False, db_index=True)
+    published_at = models.DateTimeField("公開日時", blank=True, null=True)
+    history = HistoricalRecords()
+
+    def __str__(self):
+        return "%s: %s %s %s%s" % (
+            self.id,
+            self.user,
+            self.work_date,
+            self.time_slot,
+            "" if self.is_published else " [未公開]",
+        )
+
+
 class ShiftDeadline(models.Model):
     """シフト希望提出の期限日（グループ・期間ごとに管理者が設定）"""
 
@@ -455,6 +503,7 @@ class SlackNotificationSetting(models.Model):
     reminder_days_before = models.PositiveSmallIntegerField("リマインドする日数（期限の何日前）", default=3)
     notify_shift_confirmed = models.BooleanField("メンバーのシフト確定", default=False)
     notify_schedule_changed = models.BooleanField("提出期限・開講スケジュールの変更", default=True)
+    notify_shift_published = models.BooleanField("確定シフトの公開", default=True)
     # Webhook URL は秘密情報なので履歴には残さない
     history = HistoricalRecords(excluded_fields=["webhook_url"])
 

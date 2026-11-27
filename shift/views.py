@@ -1018,17 +1018,18 @@ def schedule_settings(request, group_id):
 
 @login_required
 def time_slot_delete(request, group_id, time_slot_id):
-    """勤務時間を削除する（シフト希望が登録済みのものは無効化のみ）"""
+    """勤務時間を削除する（シフト希望・確定シフトが登録済みのものは無効化のみ）"""
     group = _get_group_for_user(request, group_id, require_admin=True)
     time_slot = get_object_or_404(TimeSlot, id=time_slot_id, group=group)
 
     if request.method != "POST":
         raise PermissionDenied
 
-    if ShiftEntry.objects.filter(time_slot=time_slot).exists():
+    if ShiftEntry.objects.filter(time_slot=time_slot).exists() or time_slot.shift_assignments.exists():
         messages.error(
             request,
-            "勤務時間「%s」はシフト希望が登録されているため削除できません。無効にしてください。" % time_slot.name,
+            "勤務時間「%s」はシフト希望または確定シフトが登録されているため削除できません。無効にしてください。"
+            % time_slot.name,
         )
         return redirect("shift:schedule_settings", group_id=group.id)
 

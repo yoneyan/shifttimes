@@ -15,6 +15,7 @@ from django.contrib.auth.views import (
 from django.db import transaction
 from django.shortcuts import redirect, render
 from django.urls import reverse, reverse_lazy
+from django.utils import timezone
 
 from custom_auth.form import (
     EmailChangeForm,
@@ -28,7 +29,7 @@ from custom_auth.form import (
     TwoAuthForm,
 )
 from custom_auth.models import TOTPDevice, User, UserActivateToken, UserGroup
-from shift.models import AttendanceSetting, SlackNotificationSetting
+from shift.models import AttendanceSetting, ShiftAssignment, SlackNotificationSetting
 
 
 @login_required
@@ -230,6 +231,7 @@ def _remove_membership(membership_id, group_id, actor_id=None):
 
     actor_id は管理者として他人を外すときの操作ユーザー（自分で脱退するときは None）。
     ユーザのアカウントと、過去のシフト希望・勤怠は残す（勤怠集計では退会済みとして表示する）。
+    今日以降の確定シフトは削除する。
     """
     with transaction.atomic():
         memberships = _lock_memberships(group_id, actor_id)
@@ -237,6 +239,10 @@ def _remove_membership(membership_id, group_id, actor_id=None):
         if target.is_admin and not any(m.is_admin and m.id != target.id for m in memberships):
             raise MembershipChangeError(_LAST_ADMIN_MESSAGE)
         target.delete()
+        # 今日以降の確定シフトは、外した人のぶんが残ると人数が足りているように見えるので消す
+        ShiftAssignment.objects.filter(
+            group_id=group_id, user_id=target.user_id, work_date__gte=timezone.now().date()
+        ).delete()
         return target
 
 

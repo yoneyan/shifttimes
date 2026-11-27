@@ -1,0 +1,304 @@
+{% extends 'base.html' %}
+{% block extrahead %}
+{% include 'shift/_grid_styles.html' %}
+<style>
+  /* 割り当てセル */
+  .summary-table td.as-cell { cursor: pointer; }
+  .summary-table td.as-cell:hover { background: #eef4ff; }
+  .as-chip {
+    display: block;
+    border-radius: .15rem;
+    font-size: .7rem;
+    font-weight: 700;
+    line-height: 1.15rem;
+    height: 1.15rem;
+  }
+  /* 割り当てなし：希望の記号だけを薄く出す */
+  .as-chip-none        { background: #fff; color: #adb5bd; border: 1px dashed #dee2e6; line-height: 1.05rem; }
+  .as-chip-none.hope-available { color: #198754; }
+  .as-chip-none.hope-maybe     { color: #fd7e14; }
+  /* 割り当てあり */
+  .as-chip-published { background: #0d6efd; color: #fff; }
+  .as-chip-draft     { background: #cfe2ff; color: #084298; box-shadow: inset 0 0 0 1px #0d6efd; }
+  .as-chip-conflict  { box-shadow: inset 0 0 0 2px #dc3545; }
+  .as-chip-spacer    { visibility: hidden; }
+  .as-note-mark { color: #6c757d; font-size: .6rem; display: block; line-height: 1; }
+  .as-total-chip {
+    display: block;
+    border-radius: .15rem;
+    font-size: .7rem;
+    font-weight: 700;
+    line-height: 1.15rem;
+    height: 1.15rem;
+    background: #e7f1ff;
+    color: #0a58ca;
+  }
+  .as-total-chip-zero { background: #f8f9fa; color: #ced4da; font-weight: 400; }
+  .as-slot-option + .as-slot-option { border-top: 1px solid #e9ecef; }
+</style>
+{% endblock %}
+
+{% block title %}シフト作成 | {% endblock %}
+{% block page_title %}シフト作成{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }} / {{ group.name }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'shift:summary' group.id %}">
+    <i class="bi bi-grid-3x3-gap me-1"></i>シフト提出状況
+  </a>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'shift:assignment_member' group.id %}?month={{ current_month_value }}">
+    <i class="bi bi-eye me-1"></i>メンバーの見え方
+  </a>
+{% endblock %}
+{% block content %}
+  {% include 'shift/_month_nav.html' %}
+
+  {# ===== 公開 ===== #}
+  <div class="alert {% if unpublished_count %}alert-warning{% else %}alert-light border{% endif %} d-flex flex-wrap align-items-center gap-2 py-2 small">
+    {% if unpublished_count %}
+      <i class="bi bi-exclamation-circle"></i>
+      <span class="me-auto">
+        この月に<strong>未公開の割り当てが {{ unpublished_count }} 件</strong>あります。公開するとメンバーの「確定シフト」に表示されます。
+      </span>
+      <form method="post" class="m-0" onsubmit="return confirm('{{ current_month|date:"Y年n月" }}の未公開の割り当てを公開しますか？');">
+        {% csrf_token %}
+        <input type="hidden" name="month" value="{{ current_month_value }}">
+        <input type="hidden" name="action" value="publish">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-send me-1"></i>{{ current_month|date:"n月" }}のシフトを公開
+        </button>
+      </form>
+    {% else %}
+      <i class="bi bi-check-circle text-success"></i>
+      <span>この月の割り当てはすべて公開済みです（または割り当てがありません）。</span>
+    {% endif %}
+  </div>
+
+  {% if not members %}
+    <div class="alert alert-info">割り当てできるメンバーがいません。</div>
+  {% elif not time_slots %}
+    <div class="alert alert-info">有効な勤務時間がありません。開講スケジュール設定で登録してください。</div>
+  {% else %}
+    {# ===== 凡例 ===== #}
+    <div class="legend-card mb-2">
+      <div class="legend-row">
+        <span class="fw-bold">記号</span>
+        <span class="legend-item"><span class="as-chip as-chip-published" style="width:1.4rem">○</span>割り当て済み（公開）</span>
+        <span class="legend-item"><span class="as-chip as-chip-draft" style="width:1.4rem">○</span>割り当て済み（未公開）</span>
+        <span class="legend-item"><span class="as-chip as-chip-published as-chip-conflict" style="width:1.4rem">×</span>「勤務不可」に割り当て</span>
+        <span class="legend-item"><span class="as-chip as-chip-none hope-available" style="width:1.4rem">○</span>未割り当て（記号は希望）</span>
+        <span class="text-muted">セルを押すと割り当てを変更できます</span>
+      </div>
+      <div class="legend-row">
+        <span class="fw-bold">各セルの段</span>
+        {% for sl in slot_legend %}
+          <span class="legend-item">
+            <span class="legend-rownum">{{ sl.index }}</span>
+            {{ sl.time_slot.name }} <span class="text-muted">{{ sl.time_range }}</span>
+          </span>
+        {% endfor %}
+      </div>
+      {% if schedule_legend %}
+        <div class="legend-row">
+          <span class="fw-bold">開講区分</span>
+          {% for item in schedule_legend %}
+            <span class="legend-item">
+              <span class="legend-rownum" style="background:{{ item.color }};border-radius:.15rem;width:.9rem;height:.9rem"></span>{{ item.name }}
+            </span>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    {# ===== 本体 ===== #}
+    <div class="summary-wrap">
+      <table class="summary-table">
+        <thead>
+          <tr>
+            <th class="col-name">メンバー</th>
+            <th class="col-count">割当<br>回数</th>
+            {% for dh in date_headers %}
+              <th class="col-date{% if dh.is_saturday %} col-sat col-weekend{% endif %}{% if dh.is_sunday %} col-sun col-weekend{% endif %}{% if dh.is_blocked %} col-blocked{% endif %}{% if dh.is_today %} col-today{% endif %}"
+                  title="{{ dh.work_date|date:'Y年n月j日(D)' }}{% if dh.opening_schedule %} / {{ dh.opening_schedule.schedule_type.name }}{% endif %}">
+                <span class="day-num">{{ dh.work_date|date:'j' }}</span>
+                <span class="day-wd">{{ dh.work_date|date:'D' }}</span>
+                {% if dh.opening_schedule %}
+                  <span class="schedule-badge" style="background:{{ dh.schedule_color }}">
+                    {{ dh.opening_schedule.schedule_type.name|truncatechars:3 }}
+                  </span>
+                {% endif %}
+              </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in member_rows %}
+            <tr>
+              <td class="col-name">
+                <span class="d-block text-truncate" title="{{ row.member.get_display_name }}">{{ row.member.get_display_name }}</span>
+              </td>
+              <td class="col-count">
+                <span class="count-main">{{ row.assigned_slots }}</span>
+                <span class="count-sub">{{ row.assigned_time }}</span>
+              </td>
+              {% for cell in row.cells %}
+                <td class="col-date as-cell{% if cell.is_saturday or cell.is_sunday %} col-weekend{% endif %}{% if cell.is_blocked %} col-blocked{% endif %}{% if cell.is_today %} col-today{% endif %}"
+                    data-user-id="{{ row.member.id }}"
+                    data-member="{{ row.member.get_display_name }}"
+                    data-date="{{ cell.work_date|date:'Y-m-d' }}"
+                    data-label="{{ cell.work_date|date:'n月j日 (D)' }}"
+                    role="button" tabindex="0"
+                    aria-label="{{ row.member.get_display_name }} {{ cell.work_date|date:'n月j日' }} の割り当てを変更">
+                  <div class="slot-stack">
+                    {% for sc in cell.slot_cells %}
+                      {% if sc.hidden %}
+                        <span class="as-chip as-chip-spacer">&nbsp;</span>
+                      {% elif sc.assignment %}
+                        <span class="as-chip {% if sc.assignment.is_published %}as-chip-published{% else %}as-chip-draft{% endif %}{% if sc.is_conflict %} as-chip-conflict{% endif %}"
+                              title="{{ sc.time_slot.display_label }} 割り当て済み{% if not sc.assignment.is_published %}（未公開）{% endif %}{% if sc.hope %} / 希望: {{ sc.hope.get_status_display }}{% endif %}">{{ sc.hope_symbol|default:'●' }}</span>
+                      {% else %}
+                        <span class="as-chip as-chip-none{% if sc.hope %} hope-{{ sc.hope.status }}{% endif %}"
+                              title="{{ sc.time_slot.display_label }}{% if sc.hope %} 希望: {{ sc.hope.get_status_display }}{% else %} 希望なし{% endif %}">{{ sc.hope_symbol|default:'&nbsp;' }}</span>
+                      {% endif %}
+                    {% endfor %}
+                    {% if cell.note %}<span class="as-note-mark" title="{{ cell.note }}"><i class="bi bi-chat-left-text"></i></span>{% endif %}
+                  </div>
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="col-name fw-bold">日別 割り当て人数</td>
+            <td class="col-count"></td>
+            {% for dt in day_totals %}
+              <td class="col-date{% if dt.is_saturday or dt.is_sunday %} col-weekend{% endif %}{% if dt.is_blocked %} col-blocked{% endif %}{% if dt.is_today %} col-today{% endif %}">
+                <div class="total-stack">
+                  {% for sct in dt.slot_counts %}
+                    <span class="as-total-chip{% if not sct.assigned %} as-total-chip-zero{% endif %}"
+                          title="{{ dt.work_date|date:'n/j' }} {{ sct.time_slot.display_label }} / 割り当て {{ sct.assigned }}人">{{ sct.assigned }}</span>
+                  {% endfor %}
+                </div>
+              </td>
+            {% endfor %}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <p class="text-muted small mt-2 mb-0">
+      <i class="bi bi-info-circle me-1"></i>
+      希望の記号は提出済みのシフト希望です（下書きは含みません）。割り当てた直後は未公開で、上の「公開」を押すとメンバーに表示されます。
+      公開済みの割り当てを外したときは、すぐにメンバーの画面からも消えます。
+    </p>
+
+    {# ===== 割り当てダイアログ ===== #}
+    <div class="modal fade" id="assignmentModal" tabindex="-1" aria-labelledby="assignmentModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="month" value="{{ current_month_value }}">
+            <input type="hidden" name="action" value="save">
+            <input type="hidden" name="user_id" id="assignmentUserId" value="">
+            <input type="hidden" name="work_date" id="assignmentWorkDate" value="">
+            <div class="modal-header">
+              <h5 class="modal-title" id="assignmentModalLabel">シフトの割り当て</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+            </div>
+            <div class="modal-body">
+              <div class="small fw-bold mb-1">勤務時間</div>
+              <div class="border rounded mb-3" id="assignmentSlots"></div>
+              <label class="form-label small fw-bold" for="assignmentNote">メモ（任意）</label>
+              <input class="form-control" type="text" name="note" id="assignmentNote" maxlength="{{ note_max_length }}"
+                     placeholder="例: レジ担当、30分早く来てください">
+              <div class="form-text">メモはこの日の割り当てすべてに付き、メンバーにも表示されます。</div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">キャンセル</button>
+              <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>保存する</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    {{ slot_options|json_script:"assignmentSlotOptions" }}
+    {{ cells_payload|json_script:"assignmentCells" }}
+  {% endif %}
+{% endblock content %}
+
+{% block javascript %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const modalEl = document.getElementById("assignmentModal");
+      if (!modalEl) {
+        return;
+      }
+      const modal = new bootstrap.Modal(modalEl);
+      const slotOptions = JSON.parse(document.getElementById("assignmentSlotOptions").textContent);
+      const cells = JSON.parse(document.getElementById("assignmentCells").textContent);
+      const slotsBox = document.getElementById("assignmentSlots");
+      const userIdInput = document.getElementById("assignmentUserId");
+      const workDateInput = document.getElementById("assignmentWorkDate");
+      const noteInput = document.getElementById("assignmentNote");
+      const modalLabel = document.getElementById("assignmentModalLabel");
+      const hopeLabels = {
+        available: ["○ 勤務可能", "text-success"],
+        maybe: ["△ 要相談", "text-warning"],
+        unavailable: ["× 勤務不可", "text-danger"],
+      };
+
+      const open = function (cell) {
+        const key = cell.dataset.userId + ":" + cell.dataset.date;
+        const data = cells[key] || {assigned: [], hopes: {}, note: ""};
+        userIdInput.value = cell.dataset.userId;
+        workDateInput.value = cell.dataset.date;
+        noteInput.value = data.note || "";
+        modalLabel.textContent = cell.dataset.member + " / " + cell.dataset.label;
+
+        slotsBox.replaceChildren();
+        slotOptions.forEach(function (slot) {
+          const assigned = data.assigned.indexOf(slot.id) !== -1;
+          // 無効にした勤務時間は、割り当て済みのものを外すときだけ表示する
+          if (!slot.is_active && !assigned) {
+            return;
+          }
+          const id = "assignmentSlot" + slot.id;
+          const row = document.createElement("div");
+          row.className = "as-slot-option form-check d-flex align-items-center gap-2 px-3 py-2 m-0";
+          const input = document.createElement("input");
+          input.className = "form-check-input m-0";
+          input.type = "checkbox";
+          input.name = "time_slot";
+          input.value = String(slot.id);
+          input.id = id;
+          input.checked = assigned;
+          const label = document.createElement("label");
+          label.className = "form-check-label flex-grow-1";
+          label.htmlFor = id;
+          label.textContent = slot.label + (slot.is_active ? "" : "（無効）");
+          const hope = document.createElement("span");
+          const hopeLabel = hopeLabels[data.hopes[String(slot.id)]];
+          hope.className = "small " + (hopeLabel ? hopeLabel[1] : "text-muted");
+          hope.textContent = hopeLabel ? hopeLabel[0] : "希望なし";
+          row.replaceChildren(input, label, hope);
+          slotsBox.appendChild(row);
+        });
+        modal.show();
+      };
+
+      document.querySelectorAll("td.as-cell").forEach(function (cell) {
+        cell.addEventListener("click", function () {
+          open(cell);
+        });
+        cell.addEventListener("keydown", function (event) {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            open(cell);
+          }
+        });
+      });
+    });
+  </script>
+{% endblock javascript %}

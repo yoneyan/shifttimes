@@ -16,6 +16,7 @@ from shift.models import (
     AttendanceSetting,
     DateOpeningSchedule,
     OpeningScheduleType,
+    ShiftAssignment,
     ShiftDeadline,
     ShiftEntry,
     SlackNotificationSetting,
@@ -2597,3 +2598,244 @@ class SlackReminderCommandTests(TestCase):
         webhook_client = self._run()
 
         webhook_client.return_value.send.assert_not_called()
+
+
+class ShiftAssignmentTests(TestCase):
+    """確定シフト（割り当てと公開）"""
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.member = user_model.objects.create(
+            username="member", username_jp="メンバー", email="member@example.com", is_active=True
+        )
+        self.other = user_model.objects.create(
+            username="other", username_jp="同僚", email="other@example.com", is_active=True
+        )
+        self.admin_user = user_model.objects.create(
+            username="admin", username_jp="管理者", email="admin@example.com", is_active=True
+        )
+        self.outsider = user_model.objects.create(
+            username="outsider", username_jp="部外者", email="outsider@example.com", is_active=True
+        )
+        self.group = Group.objects.create(name="shop", name_jp="店舗")
+        self.other_group = Group.objects.create(name="other-shop", name_jp="別店舗")
+        UserGroup.objects.create(user=self.member, group=self.group)
+        UserGroup.objects.create(user=self.other, group=self.group)
+        UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
+        UserGroup.objects.create(user=self.outsider, group=self.other_group, is_admin=True)
+        self.morning = TimeSlot.objects.create(
+            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0)
+        )
+        self.evening = TimeSlot.objects.create(
+            group=self.group, name="遅番", start_time=time(17, 0), end_time=time(21, 0)
+        )
+        self.foreign_slot = TimeSlot.objects.create(
+            group=self.other_group, name="早番", start_time=time(9, 0), end_time=time(13, 0)
+        )
+        self.today = timezone.now().date()
+        self.month = self.today.replace(day=1)
+        self.url = reverse("shift:assignment", args=[self.group.id])
+        self.member_url = reverse("shift:assignment_member", args=[self.group.id])
+
+    def _save(self, user, work_date, slots, note=""):
+        return self.client.post(
+            self.url,
+            {
+                "month": work_date.strftime("%Y-%m"),
+                "action": "save",
+                "user_id": user.id,
+                "work_date": work_date.isoformat(),
+                "time_slot": [slot.id for slot in slots],
+                "note": note,
+            },
+        )
+
+    def _publish(self, month=None):
+        return self.client.post(self.url, {"month": (month or self.month).strftime("%Y-%m"), "action": "publish"})
+
+    def test_assignment_page_requires_group_admin(self):
+        self.client.force_login(self.member)
+
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+        self._save(self.member, self.today, [self.morning])
+        self.assertFalse(ShiftAssignment.objects.exists())
+
+    def test_admin_of_other_group_cannot_open(self):
+        self.client.force_login(self.outsider)
+
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+
+    def test_admin_can_assign_and_it_starts_unpublished(self):
+        self.client.force_login(self.admin_user)
+
+        response = self._save(self.member, self.today, [self.morning, self.evening], note="レジ担当")
+
+        self.assertRedirects(response, "%s?month=%s" % (self.url, self.month.strftime("%Y-%m")))
+        assignments = ShiftAssignment.objects.filter(user=self.member, work_date=self.today)
+        self.assertEqual({a.time_slot_id for a in assignments}, {self.morning.id, self.evening.id})
+        self.assertTrue(all(not a.is_published and a.note == "レジ担当" for a in assignments))
+
+    def test_saving_cell_replaces_slots_and_keeps_published_state(self):
+        ShiftAssignment.objects.create(
+            group=self.group, user=self.member, work_date=self.today, time_slot=self.morning, is_published=True
+        )
+        ShiftAssignment.objects.create(group=self.group, user=self.member, work_date=self.today, time_slot=self.evening)
+        self.client.force_login(self.admin_user)
+
+        self._save(self.member, self.today, [self.morning], note="メモ")
+
+        assignments = list(ShiftAssignment.objects.filter(user=self.member, work_date=self.today))
+        self.assertEqual(len(assignments), 1)
+        self.assertEqual(assignments[0].time_slot, self.morning)
+        self.assertTrue(assignments[0].is_published)
+        self.assertEqual(assignments[0].note, "メモ")
+
+    def test_saving_empty_selection_removes_assignments(self):
+        ShiftAssignment.objects.create(group=self.group, user=self.member, work_date=self.today, time_slot=self.morning)
+        self.client.force_login(self.admin_user)
+
+        self._save(self.member, self.today, [])
+
+        self.assertFalse(ShiftAssignment.objects.exists())
+
+    def test_cannot_assign_slot_of_other_group(self):
+        self.client.force_login(self.admin_user)
+
+        self._save(self.member, self.today, [self.foreign_slot])
+
+        self.assertFalse(ShiftAssignment.objects.exists())
+
+    def test_cannot_assign_non_member(self):
+        self.client.force_login(self.admin_user)
+
+        self._save(self.outsider, self.today, [self.morning])
+
+        self.assertFalse(ShiftAssignment.objects.exists())
+
+    def test_inactive_slot_can_be_kept_but_not_newly_assigned(self):
+        ShiftAssignment.objects.create(group=self.group, user=self.member, work_date=self.today, time_slot=self.evening)
+        self.evening.is_active = False
+        self.evening.save()
+        self.client.force_login(self.admin_user)
+
+        self._save(self.other, self.today, [self.evening])
+        self._save(self.member, self.today, [self.morning, self.evening])
+
+        self.assertFalse(ShiftAssignment.objects.filter(user=self.other).exists())
+        self.assertEqual(
+            {a.time_slot_id for a in ShiftAssignment.objects.filter(user=self.member)},
+            {self.morning.id, self.evening.id},
+        )
+
+    def test_publish_publishes_only_the_month(self):
+        next_month = (self.month + timedelta(days=32)).replace(day=1)
+        ShiftAssignment.objects.create(group=self.group, user=self.member, work_date=self.month, time_slot=self.morning)
+        ShiftAssignment.objects.create(group=self.group, user=self.member, work_date=next_month, time_slot=self.morning)
+        self.client.force_login(self.admin_user)
+
+        with mock.patch("shift.slack.notify_shift_published") as notify:
+            self._publish()
+
+        self.assertTrue(ShiftAssignment.objects.get(work_date=self.month).is_published)
+        self.assertIsNotNone(ShiftAssignment.objects.get(work_date=self.month).published_at)
+        self.assertFalse(ShiftAssignment.objects.get(work_date=next_month).is_published)
+        notify.assert_called_once()
+        self.assertEqual(notify.call_args.args[1], 1)
+
+    def test_publish_without_changes_does_not_notify(self):
+        self.client.force_login(self.admin_user)
+
+        with mock.patch("shift.slack.notify_shift_published") as notify:
+            self._publish()
+
+        notify.assert_not_called()
+
+    def test_assignment_page_shows_hopes_and_conflicts(self):
+        ShiftEntry.objects.create(
+            group=self.group, user=self.member, work_date=self.today, time_slot=self.morning, status="unavailable"
+        )
+        ShiftAssignment.objects.create(group=self.group, user=self.member, work_date=self.today, time_slot=self.morning)
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["unpublished_count"], 1)
+        row = next(row for row in response.context["member_rows"] if row["member"] == self.member)
+        cell = next(cell for cell in row["cells"] if cell["work_date"] == self.today)
+        self.assertTrue(cell["slot_cells"][0]["is_conflict"])
+        self.assertEqual(row["assigned_slots"], 1)
+        self.assertEqual(row["assigned_time"], "4:00")
+        self.assertContains(response, "as-chip-conflict")
+
+    def test_member_sees_only_published_assignments(self):
+        ShiftAssignment.objects.create(
+            group=self.group,
+            user=self.member,
+            work_date=self.today,
+            time_slot=self.morning,
+            is_published=True,
+            note="公開済みメモ",
+        )
+        ShiftAssignment.objects.create(
+            group=self.group, user=self.other, work_date=self.today, time_slot=self.evening, note="未公開メモ"
+        )
+        self.client.force_login(self.member)
+
+        response = self.client.get(self.member_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([day["work_date"] for day in response.context["my_days"]], [self.today])
+        self.assertContains(response, "公開済みメモ")
+        self.assertNotContains(response, "未公開メモ")
+        other_row = next(row for row in response.context["member_rows"] if row["member"] == self.other)
+        self.assertFalse(any(cell["indexes"] for cell in other_row["cells"]))
+
+    def test_member_view_requires_membership(self):
+        self.client.force_login(self.outsider)
+
+        self.assertEqual(self.client.get(self.member_url).status_code, 403)
+
+    def test_removing_member_deletes_future_assignments_only(self):
+        past = self.today - timedelta(days=1)
+        ShiftAssignment.objects.create(group=self.group, user=self.member, work_date=past, time_slot=self.morning)
+        ShiftAssignment.objects.create(group=self.group, user=self.member, work_date=self.today, time_slot=self.morning)
+        membership = UserGroup.objects.get(user=self.member, group=self.group)
+        self.client.force_login(self.admin_user)
+
+        self.client.post(reverse("custom_auth_group:remove_member", args=[self.group.id, membership.id]))
+
+        self.assertEqual(list(ShiftAssignment.objects.values_list("work_date", flat=True)), [past])
+
+    def test_time_slot_with_assignment_cannot_be_deleted(self):
+        ShiftAssignment.objects.create(group=self.group, user=self.member, work_date=self.today, time_slot=self.morning)
+        self.client.force_login(self.admin_user)
+
+        self.client.post(reverse("shift:time_slot_delete", args=[self.group.id, self.morning.id]))
+
+        self.assertTrue(TimeSlot.objects.filter(id=self.morning.id).exists())
+
+    def test_publish_notification_text(self):
+        setting = SlackNotificationSetting.objects.create(
+            group=self.group, is_enabled=True, webhook_url="https://hooks.slack.com/services/T/B/X"
+        )
+        with mock.patch("shift.slack.send", return_value=(True, None)) as send:
+            slack.notify_shift_published(self.group, 3, self.month, self.month, setting=setting)
+
+        title, text = send.call_args.args[1], send.call_args.args[2]
+        self.assertIn("確定シフトが公開されました", title)
+        self.assertIn("3件", text)
+        self.assertIn(self.member_url, text)
+
+    def test_publish_notification_can_be_disabled(self):
+        setting = SlackNotificationSetting.objects.create(
+            group=self.group,
+            is_enabled=True,
+            webhook_url="https://hooks.slack.com/services/T/B/X",
+            notify_shift_published=False,
+        )
+        with mock.patch("shift.slack.send") as send:
+            sent, _error = slack.notify_shift_published(self.group, 3, self.month, self.month, setting=setting)
+
+        self.assertFalse(sent)
+        send.assert_not_called()

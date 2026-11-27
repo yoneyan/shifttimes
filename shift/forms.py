@@ -253,6 +253,7 @@ class SlackNotificationSettingForm(forms.ModelForm):
             "reminder_days_before",
             "notify_shift_confirmed",
             "notify_schedule_changed",
+            "notify_shift_published",
         )
         widgets = {
             "is_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
@@ -268,6 +269,7 @@ class SlackNotificationSettingForm(forms.ModelForm):
             "reminder_days_before": forms.NumberInput(attrs={"class": "form-control", "min": 0, "max": 60}),
             "notify_shift_confirmed": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "notify_schedule_changed": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "notify_shift_published": forms.CheckboxInput(attrs={"class": "form-check-input"}),
         }
 
     def __init__(self, *args, **kwargs):

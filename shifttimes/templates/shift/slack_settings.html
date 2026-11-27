@@ -199,6 +199,13 @@
           提出期限・開講スケジュールを変更したとき
         </label>
       </div>
+
+      <div class="form-check form-switch mb-3">
+        {{ setting_form.notify_shift_published }}
+        <label class="form-check-label" for="{{ setting_form.notify_shift_published.id_for_label }}">
+          確定シフトを公開したとき
+        </label>
+      </div>
     </div>
     <div class="card-footer bg-white d-flex flex-wrap gap-2">
       <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>保存</button>

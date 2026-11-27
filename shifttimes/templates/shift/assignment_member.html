@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% block extrahead %}
+{% include 'shift/_grid_styles.html' %}
+<style>
+  .my-shift-list .list-group-item { display: flex; gap: .75rem; align-items: flex-start; }
+  .my-shift-date { min-width: 4.5rem; font-weight: 700; }
+  .my-shift-date.is-sat { color: #1565c0; }
+  .my-shift-date.is-sun { color: #c62828; }
+  .ms-chip {
+    display: block;
+    border-radius: .15rem;
+    font-size: .7rem;
+    font-weight: 700;
+    line-height: 1.15rem;
+    height: 1.15rem;
+    background: #0d6efd;
+    color: #fff;
+  }
+  .summary-table tr.row-me .col-name,
+  .summary-table tr.row-me .col-date { background: #f3f8ff; }
+</style>
+{% endblock %}
+
+{% block title %}確定シフト | {% endblock %}
+{% block page_title %}確定シフト{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }} / {{ group.name }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'shift:index' %}?group={{ group.id }}">
+    <i class="bi bi-arrow-left me-1"></i>一覧へ戻る
+  </a>
+{% endblock %}
+{% block content %}
+  {% include 'shift/_month_nav.html' %}
+
+  {% if not has_published %}
+    <div class="alert alert-info">この月の確定シフトはまだ公開されていません。</div>
+  {% else %}
+    {% if is_member %}
+      <section class="mb-4">
+        <h2 class="h6 fw-bold mb-2">
+          あなたのシフト
+          <span class="badge text-bg-primary align-middle ms-1">{{ my_days|length }}日 / {{ my_total_time }}</span>
+        </h2>
+        {% if my_days %}
+          <div class="list-group my-shift-list">
+            {% for day in my_days %}
+              <div class="list-group-item{% if day.is_today %} list-group-item-primary{% endif %}">
+                <span class="my-shift-date{% if day.is_saturday %} is-sat{% elif day.is_sunday %} is-sun{% endif %}">
+                  {{ day.work_date|date:'n/j (D)' }}
+                </span>
+                <div>
+                  {% for item in day.assignments %}
+                    <div>{{ item.time_slot.display_label }}</div>
+                  {% endfor %}
+                  {% if day.note %}<div class="small text-muted"><i class="bi bi-chat-left-text me-1"></i>{{ day.note }}</div>{% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="text-muted small mb-0">この月にあなたのシフトはありません。</p>
+        {% endif %}
+      </section>
+    {% endif %}
+
+    <section>
+      <h2 class="h6 fw-bold mb-2">グループ全員のシフト</h2>
+      <div class="legend-card mb-2">
+        <div class="legend-row">
+          <span class="fw-bold">番号</span>
+          {% for sl in slot_legend %}
+            <span class="legend-item">
+              <span class="legend-rownum">{{ sl.index }}</span>
+              {{ sl.time_slot.name }} <span class="text-muted">{{ sl.time_range }}</span>
+            </span>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="summary-wrap">
+        <table class="summary-table">
+          <thead>
+            <tr>
+              <th class="col-name">メンバー</th>
+              {% for dh in date_headers %}
+                <th class="col-date{% if dh.is_saturday %} col-sat col-weekend{% endif %}{% if dh.is_sunday %} col-sun col-weekend{% endif %}{% if dh.is_blocked %} col-blocked{% endif %}{% if dh.is_today %} col-today{% endif %}"
+                    title="{{ dh.work_date|date:'Y年n月j日(D)' }}{% if dh.opening_schedule %} / {{ dh.opening_schedule.schedule_type.name }}{% endif %}">
+                  <span class="day-num">{{ dh.work_date|date:'j' }}</span>
+                  <span class="day-wd">{{ dh.work_date|date:'D' }}</span>
+                  {% if dh.opening_schedule %}
+                    <span class="schedule-badge" style="background:{{ dh.schedule_color }}">
+                      {{ dh.opening_schedule.schedule_type.name|truncatechars:3 }}
+                    </span>
+                  {% endif %}
+                </th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in member_rows %}
+              <tr{% if row.is_me %} class="row-me"{% endif %}>
+                <td class="col-name">
+                  <span class="d-block text-truncate" title="{{ row.member.get_display_name }}">{{ row.member.get_display_name }}</span>
+                </td>
+                {% for cell in row.cells %}
+                  <td class="col-date{% if cell.is_saturday or cell.is_sunday %} col-weekend{% endif %}{% if cell.is_blocked %} col-blocked{% endif %}{% if cell.is_today %} col-today{% endif %}">
+                    <div class="slot-stack">
+                      {% for item in cell.indexes %}
+                        <span class="ms-chip" title="{{ item.time_slot.display_label }}{% if item.note %} / {{ item.note }}{% endif %}">{{ item.index }}</span>
+                      {% endfor %}
+                    </div>
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
+{% endblock content %}
