@@ -14,6 +14,7 @@ from collections import defaultdict
 from datetime import timedelta
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count
@@ -619,9 +620,14 @@ def _breakdown_table(member_rows):
     }
 
 
-def _summary_members(group):
-    """勤怠集計の対象メンバー（有効なユーザーのみ、ユーザー名順）"""
-    return [
+def _summary_members(group, month_from, month_to):
+    """勤怠集計の対象メンバー（有効なユーザーをユーザー名順に並べ、その後に勤怠のあるほかの人）
+
+    給与計算から漏れないように、その月に勤怠が残っていれば無効なアカウントの人や、
+    グループから外れた人も含める。グループに所属していない人には ``is_former_member`` を立てる。
+    """
+    member_ids = set(UserGroup.objects.filter(group=group).values_list("user_id", flat=True))
+    members = [
         membership.user
         for membership in (
             UserGroup.objects.filter(group=group, user__is_active=True)
@@ -629,6 +635,22 @@ def _summary_members(group):
             .order_by("user__username")
         )
     ]
+    listed_ids = {member.id for member in members}
+    extra_ids = (
+        AttendanceRecord.objects.filter(group=group, work_date__gte=month_from, work_date__lte=month_to)
+        .exclude(user_id__in=listed_ids)
+        .values_list("user_id", flat=True)
+        .distinct()
+    )
+    extra_members = list(get_user_model().objects.filter(id__in=extra_ids).order_by("username"))
+    for member in members + extra_members:
+        member.is_former_member = member.id not in member_ids
+    return members + extra_members
+
+
+def _membership_label(is_former_member):
+    """CSV の「所属」列の値"""
+    return "退会済み" if is_former_member else "所属中"
 
 
 @login_required
@@ -642,7 +664,7 @@ def attendance_summary(request, group_id):
     current_month = _month_from_value(month_value, today)
     month_from, month_to = _month_bounds(current_month)
 
-    members = _summary_members(group)
+    members = _summary_members(group, month_from, month_to)
 
     if request.method == "POST":
         redirect_url = "{}?month={}".format(
@@ -765,7 +787,7 @@ def _csv_number(value):
     return "" if value is None else value
 
 
-def _csv_record_rows(records, show_amount):
+def _csv_record_rows(records, show_amount, former_member_ids):
     header = [
         "勤務日",
         "曜日",
@@ -781,7 +803,7 @@ def _csv_record_rows(records, show_amount):
     ]
     if show_amount:
         header += ["時給（円）", "金額（円）"]
-    header += ["入力方法", "メモ"]
+    header += ["入力方法", "メモ", "所属"]
     yield header
 
     for record in records:
@@ -800,7 +822,11 @@ def _csv_record_rows(records, show_amount):
         ]
         if show_amount:
             row += [_csv_number(record.hourly_rate), _csv_number(record.amount)]
-        row += [record.get_source_display(), _csv_text(record.note)]
+        row += [
+            record.get_source_display(),
+            _csv_text(record.note),
+            _membership_label(record.user_id in former_member_ids),
+        ]
         yield row
 
 
@@ -824,6 +850,7 @@ def _csv_member_rows(members, records, work_types, show_amount):
     for key in column_keys:
         name = columns[key].name if columns[key] else "未設定"
         header += [f"{name} 実働（分）"] + ([f"{name} 金額（円）"] if show_amount else [])
+    header.append("所属")
     yield [_csv_text(label) for label in header]
 
     for member, totals in member_totals:
@@ -842,6 +869,7 @@ def _csv_member_rows(members, records, work_types, show_amount):
             row.append(item["minutes"] if item else 0)
             if show_amount:
                 row.append(_csv_number(item["amount"]) if item else 0)
+        row.append(_membership_label(member.is_former_member))
         yield row
 
 
@@ -858,7 +886,7 @@ def attendance_summary_csv(request, group_id):
 
     current_month = _month_from_value(request.GET.get("month", ""), _today())
     month_from, month_to = _month_bounds(current_month)
-    members = _summary_members(group)
+    members = _summary_members(group, month_from, month_to)
     member_order = {member.id: index for index, member in enumerate(members)}
     records = sorted(
         AttendanceRecord.objects.filter(
@@ -879,7 +907,8 @@ def attendance_summary_csv(request, group_id):
     show_amount = bool(work_types)
 
     if kind == "records":
-        rows = _csv_record_rows(records, show_amount)
+        former_member_ids = {member.id for member in members if member.is_former_member}
+        rows = _csv_record_rows(records, show_amount, former_member_ids)
     else:
         rows = _csv_member_rows(members, records, work_types, show_amount)
 

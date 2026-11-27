@@ -148,7 +148,10 @@
       <tbody>
       {% for row in member_rows %}
         <tr>
-          <th scope="row" class="col-name">{{ row.member.get_display_name }}</th>
+          <th scope="row" class="col-name">
+            {{ row.member.get_display_name }}
+            {% if row.member.is_former_member %}<span class="badge text-bg-secondary fw-normal">退会済み</span>{% endif %}
+          </th>
           <td class="col-total">{{ row.totals.worked_days }}</td>
           <td class="col-total">{{ row.totals.total_display|default:'0:00' }}</td>
           {% if work_types %}<td class="col-total col-amount">{{ row.totals.total_amount_display }}</td>{% endif %}
@@ -200,7 +203,10 @@
           <tbody>
           {% for row in breakdown.rows %}
             <tr>
-              <th scope="row" class="fw-normal">{{ row.member.get_display_name }}</th>
+              <th scope="row" class="fw-normal">
+                {{ row.member.get_display_name }}
+                {% if row.member.is_former_member %}<span class="badge text-bg-secondary fw-normal">退会済み</span>{% endif %}
+              </th>
               {% for item in row.cells %}
                 <td class="text-end">
                   {% if item %}

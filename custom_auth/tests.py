@@ -124,6 +124,198 @@ class GroupPermissionViewTests(TestCase):
         self.assertFalse(self.member_group.is_admin)
 
 
+class MembershipRemovalTests(TestCase):
+    """メンバーの削除とグループからの脱退"""
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.member = user_model.objects.create(
+            username="member", username_jp="メンバー", email="member@example.com", is_active=True
+        )
+        self.admin_user = user_model.objects.create(
+            username="admin", username_jp="管理者", email="admin@example.com", is_active=True
+        )
+        self.outsider = user_model.objects.create(
+            username="outsider", username_jp="部外者", email="outsider@example.com", is_active=True
+        )
+        self.group = Group.objects.create(name="shop", name_jp="店舗")
+        self.other_group = Group.objects.create(name="other-shop", name_jp="別店舗")
+        self.member_group = UserGroup.objects.create(user=self.member, group=self.group)
+        self.admin_group = UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
+        self.outsider_group = UserGroup.objects.create(user=self.outsider, group=self.other_group, is_admin=True)
+
+    def _remove_url(self, membership, group=None):
+        return reverse("custom_auth_group:remove_member", args=[(group or self.group).id, membership.id])
+
+    def test_admin_sees_confirmation_before_removing(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self._remove_url(self.member_group))
+
+        self.assertTemplateUsed(response, "group/remove_member.html")
+        self.assertTrue(UserGroup.objects.filter(id=self.member_group.id).exists())
+
+    def test_admin_can_remove_member_and_account_remains(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(self._remove_url(self.member_group))
+
+        self.assertRedirects(response, reverse("custom_auth_group:members", args=[self.group.id]))
+        self.assertFalse(UserGroup.objects.filter(id=self.member_group.id).exists())
+        self.assertTrue(get_user_model().objects.filter(id=self.member.id).exists())
+
+    def test_member_cannot_remove_others(self):
+        self.client.force_login(self.member)
+
+        response = self.client.post(self._remove_url(self.admin_group))
+
+        self.assertTemplateUsed(response, "error.html")
+        self.assertTrue(UserGroup.objects.filter(id=self.admin_group.id).exists())
+
+    def test_admin_cannot_remove_membership_of_other_group(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(self._remove_url(self.outsider_group))
+
+        self.assertTemplateUsed(response, "error.html")
+        self.assertTrue(UserGroup.objects.filter(id=self.outsider_group.id).exists())
+
+    def test_removing_self_goes_to_leave_page(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(self._remove_url(self.admin_group))
+
+        self.assertRedirects(response, reverse("custom_auth_group:leave", args=[self.group.id]))
+        self.assertTrue(UserGroup.objects.filter(id=self.admin_group.id).exists())
+
+    def test_admin_can_remove_another_admin(self):
+        self.member_group.is_admin = True
+        self.member_group.save()
+        self.client.force_login(self.admin_user)
+
+        self.client.post(self._remove_url(self.member_group))
+
+        self.assertFalse(UserGroup.objects.filter(id=self.member_group.id).exists())
+
+    def test_member_can_leave_group(self):
+        self.client.force_login(self.member)
+
+        response = self.client.post(reverse("custom_auth_group:leave", args=[self.group.id]))
+
+        self.assertRedirects(response, reverse("custom_auth_group:index"))
+        self.assertFalse(UserGroup.objects.filter(id=self.member_group.id).exists())
+
+    def test_last_admin_cannot_leave(self):
+        self.client.force_login(self.admin_user)
+
+        get_response = self.client.get(reverse("custom_auth_group:leave", args=[self.group.id]))
+        post_response = self.client.post(reverse("custom_auth_group:leave", args=[self.group.id]))
+
+        self.assertFalse(get_response.context["can_leave"])
+        self.assertContains(post_response, "管理者が 1 人もいなくなる")
+        self.assertTrue(UserGroup.objects.filter(id=self.admin_group.id).exists())
+
+    def test_admin_can_leave_when_another_admin_remains(self):
+        self.member_group.is_admin = True
+        self.member_group.save()
+        self.client.force_login(self.admin_user)
+
+        self.client.post(reverse("custom_auth_group:leave", args=[self.group.id]))
+
+        self.assertFalse(UserGroup.objects.filter(id=self.admin_group.id).exists())
+
+    def test_non_member_cannot_leave(self):
+        self.client.force_login(self.outsider)
+
+        response = self.client.post(reverse("custom_auth_group:leave", args=[self.group.id]))
+
+        self.assertTemplateUsed(response, "error.html")
+
+    def test_demoted_admin_cannot_remove_members(self):
+        # 確認画面を開いた後に降格された管理者の POST は通さない
+        self.client.force_login(self.admin_user)
+        self.client.get(self._remove_url(self.member_group))
+        self.admin_group.is_admin = False
+        self.admin_group.save()
+
+        self.client.post(self._remove_url(self.member_group))
+
+        self.assertTrue(UserGroup.objects.filter(id=self.member_group.id).exists())
+
+    def test_remove_rechecks_admin_inside_transaction(self):
+        from custom_auth.views import MembershipChangeError, _remove_membership
+
+        self.admin_group.is_admin = False
+        self.admin_group.save()
+
+        with self.assertRaises(MembershipChangeError):
+            _remove_membership(self.member_group.id, self.group.id, actor_id=self.admin_user.id)
+        self.assertTrue(UserGroup.objects.filter(id=self.member_group.id).exists())
+
+    def test_last_admin_cannot_be_demoted(self):
+        from custom_auth.views import MembershipChangeError, _change_admin_role
+
+        self.member_group.is_admin = True
+        self.member_group.save()
+        UserGroup.objects.filter(id=self.admin_group.id).delete()
+
+        with self.assertRaises(MembershipChangeError):
+            _change_admin_role(self.member_group.id, self.group.id, self.member.id, make_admin=False)
+        self.member_group.refresh_from_db()
+        self.assertTrue(self.member_group.is_admin)
+
+    def test_admin_cannot_change_own_role(self):
+        self.member_group.is_admin = True
+        self.member_group.save()
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse("custom_auth_group:permission", args=[self.group.id]), {"id": self.admin_group.id, "no_admin": ""}
+        )
+
+        self.assertContains(response, "自分の権限は変更できません")
+        self.admin_group.refresh_from_db()
+        self.assertTrue(self.admin_group.is_admin)
+
+    def test_admin_can_demote_other_admin(self):
+        self.member_group.is_admin = True
+        self.member_group.save()
+        self.client.force_login(self.admin_user)
+
+        self.client.post(
+            reverse("custom_auth_group:permission", args=[self.group.id]),
+            {"id": self.member_group.id, "no_admin": ""},
+        )
+
+        self.member_group.refresh_from_db()
+        self.assertFalse(self.member_group.is_admin)
+
+    def test_permission_change_rejects_membership_of_other_group(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.post(
+            reverse("custom_auth_group:permission", args=[self.group.id]),
+            {"id": self.outsider_group.id, "no_admin": ""},
+        )
+
+        self.assertContains(response, "対象のメンバーが見つかりません")
+        self.outsider_group.refresh_from_db()
+        self.assertTrue(self.outsider_group.is_admin)
+
+    def test_members_page_shows_remove_button_only_to_admin(self):
+        url = reverse("custom_auth_group:members", args=[self.group.id])
+        remove_url = self._remove_url(self.member_group)
+
+        self.client.force_login(self.member)
+        member_response = self.client.get(url)
+        self.client.force_login(self.admin_user)
+        admin_response = self.client.get(url)
+
+        self.assertNotContains(member_response, remove_url)
+        self.assertContains(admin_response, remove_url)
+        self.assertNotContains(admin_response, self._remove_url(self.admin_group))
+
+
 @skipUnless(settings.BILLING_ENABLED, "ONPREMISE_MODE では課金機能が無効なため対象外")
 class PlanResolutionTests(TestCase):
     """無償付与と Stripe 契約から、実際に適用されるプランが決まることを確認する。"""

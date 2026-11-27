@@ -4,6 +4,7 @@ from io import BytesIO
 import pyotp
 import qrcode
 import qrcode.image.svg
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import (
     PasswordResetCompleteView,
@@ -11,6 +12,7 @@ from django.contrib.auth.views import (
     PasswordResetDoneView,
     PasswordResetView,
 )
+from django.db import transaction
 from django.shortcuts import redirect, render
 from django.urls import reverse, reverse_lazy
 
@@ -171,6 +173,7 @@ def group_members(request, group_id: int):
             "is_admin": membership.is_admin,
             "created_at": membership.created_at,
             "is_me": membership.user_id == request.user.id,
+            "membership_id": membership.id,
         }
         for membership in memberships
     ]
@@ -183,8 +186,126 @@ def group_members(request, group_id: int):
         "is_administrator": user_group.is_admin,
         "max_members": user_group.group.max_members,
         "current_plan": user_group.group.plan,
+        "can_leave": _can_leave_group(user_group),
     }
     return render(request, "group/members.html", context)
+
+
+class MembershipChangeError(Exception):
+    """メンバーの削除・権限変更ができないときのエラー（メッセージは画面にそのまま出す）"""
+
+
+_LAST_ADMIN_MESSAGE = "グループの管理者が 1 人もいなくなるため、変更できません。先に他のメンバーを管理者にしてください"
+
+
+def _can_leave_group(membership):
+    """グループから抜けても管理者が 1 人以上残るか"""
+    if not membership.is_admin:
+        return True
+    return UserGroup.objects.filter(group_id=membership.group_id, is_admin=True).exclude(id=membership.id).exists()
+
+
+def _lock_memberships(group_id, actor_id=None):
+    """グループの所属をすべてロックして返す。actor_id を渡すと、その人が今も管理者かを確かめる
+
+    削除と権限変更が並行して管理者が 0 人になったり、外された・降格された管理者の
+    処理中のリクエストが通ったりしないよう、所属の変更は必ずこのロックの中で判定する。
+    トランザクションの中で呼ぶこと。
+    """
+    memberships = list(UserGroup.objects.select_for_update().filter(group_id=group_id).order_by("id"))
+    if actor_id is not None and not any(m.user_id == actor_id and m.is_admin for m in memberships):
+        raise MembershipChangeError("このグループの管理者権限がありません")
+    return memberships
+
+
+def _find_membership(memberships, membership_id):
+    target = next((membership for membership in memberships if membership.id == membership_id), None)
+    if target is None:
+        raise MembershipChangeError("対象のメンバーが見つかりません")
+    return target
+
+
+def _remove_membership(membership_id, group_id, actor_id=None):
+    """メンバーをグループから外す。管理者が 0 人になる場合は MembershipChangeError
+
+    actor_id は管理者として他人を外すときの操作ユーザー（自分で脱退するときは None）。
+    ユーザのアカウントと、過去のシフト希望・勤怠は残す（勤怠集計では退会済みとして表示する）。
+    """
+    with transaction.atomic():
+        memberships = _lock_memberships(group_id, actor_id)
+        target = _find_membership(memberships, membership_id)
+        if target.is_admin and not any(m.is_admin and m.id != target.id for m in memberships):
+            raise MembershipChangeError(_LAST_ADMIN_MESSAGE)
+        target.delete()
+        return target
+
+
+def _change_admin_role(membership_id, group_id, actor_id, make_admin):
+    """管理者権限を付け外しする。自分の権限の変更と、管理者が 0 人になる変更は MembershipChangeError"""
+    with transaction.atomic():
+        memberships = _lock_memberships(group_id, actor_id)
+        target = _find_membership(memberships, membership_id)
+        if target.user_id == actor_id:
+            raise MembershipChangeError("自分の権限は変更できません")
+        if not make_admin and not any(m.is_admin and m.id != target.id for m in memberships):
+            raise MembershipChangeError(_LAST_ADMIN_MESSAGE)
+        target.is_admin = make_admin
+        target.save(update_fields=["is_admin"])
+        return target
+
+
+@login_required
+def remove_member(request, group_id: int, membership_id: int):
+    """グループ管理者がメンバーをグループから外す（GET は確認画面）"""
+    user_group = request.user.usergroup_set.filter(group_id=group_id).select_related("group").first()
+    if not user_group or not user_group.is_admin:
+        return render(request, "error.html", {"text": "このグループの管理者権限がありません"})
+
+    target = UserGroup.objects.filter(id=membership_id, group_id=group_id).select_related("user").first()
+    if target is None:
+        return render(request, "error.html", {"text": "対象のメンバーが見つかりません"})
+    if target.user_id == request.user.id:
+        # 自分を外すのは「脱退」の画面から行う（確認の文言と移動先が違うため）
+        return redirect("custom_auth_group:leave", group_id=group_id)
+
+    error = None
+    if request.method == "POST":
+        try:
+            _remove_membership(target.id, group_id, actor_id=request.user.id)
+        except MembershipChangeError as err:
+            error = str(err)
+        else:
+            messages.success(request, f"{target.user.get_display_name()} さんをグループから外しました")
+            return redirect("custom_auth_group:members", group_id=group_id)
+
+    context = {"group": user_group.group, "target": target, "error": error}
+    return render(request, "group/remove_member.html", context)
+
+
+@login_required
+def leave_group(request, group_id: int):
+    """自分がグループから脱退する（GET は確認画面）"""
+    user_group = request.user.usergroup_set.filter(group_id=group_id).select_related("group").first()
+    if not user_group:
+        return render(request, "error.html", {"text": "このグループにアクセスする権限がありません"})
+
+    error = None
+    if request.method == "POST":
+        try:
+            _remove_membership(user_group.id, group_id)
+        except MembershipChangeError as err:
+            error = str(err)
+        else:
+            messages.success(request, f"{user_group.group.name_jp} から脱退しました")
+            return redirect("custom_auth_group:index")
+
+    context = {
+        "group": user_group.group,
+        "membership": user_group,
+        "can_leave": _can_leave_group(user_group),
+        "error": error,
+    }
+    return render(request, "group/leave.html", context)
 
 
 @login_required
@@ -226,23 +347,16 @@ def group_permission(request, group_id: int):
     if not user_group:
         return render(request, "error.html", {"text": "このグループにアクセスする権限がありません"})
     permissions = user_group.group.usergroup_set.all()
-    if request.method == "POST" and user_group.is_admin:
-        permission_id = int(request.POST.get("id", 0))
-        is_exists = user_group.group.usergroup_set.filter(id=permission_id).exists()
-        if not is_exists:
-            error = "変更権限がありません"
+    if request.method == "POST" and user_group.is_admin and ("admin" in request.POST or "no_admin" in request.POST):
+        try:
+            permission_id = int(request.POST.get("id", 0))
+            _change_admin_role(permission_id, group_id, request.user.id, make_admin="admin" in request.POST)
+        except ValueError:
+            error = "変更対象が不正です"
+        except MembershipChangeError as err:
+            error = str(err)
         else:
-            try:
-                user_group = UserGroup.objects.get(id=permission_id)
-                if "no_admin" in request.POST:
-                    user_group.is_admin = False
-                    user_group.save()
-                elif "admin" in request.POST:
-                    user_group.is_admin = True
-                    user_group.save()
-                return redirect(reverse("custom_auth_group:permission", args=[group_id]))
-            except Exception:
-                error = "アップデート処理でエラーが発生しました"
+            return redirect(reverse("custom_auth_group:permission", args=[group_id]))
 
     context = {
         "group": user_group.group,

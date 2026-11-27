@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}メンバーを外す | {% endblock %}
+{% block page_title %}メンバーを外す{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }} / {{ group.name }}</p>
+{% endblock %}
+{% block content %}
+  {% if error %}
+    <div class="alert alert-danger py-2" role="alert">{{ error }}</div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-body">
+      <p class="mb-2">
+        <span class="fw-bold">{{ target.user.get_display_name }}</span>
+        <span class="small text-muted">（{{ target.user.username_jp }} / {{ target.user.username }}）</span>
+        をグループから外します。
+      </p>
+      <ul class="small text-muted mb-3">
+        <li>本人はこのグループのシフト希望・勤怠を入力できなくなります。</li>
+        <li>アカウント自体は削除されません。</li>
+        <li>登録済みのシフト希望と勤怠は残ります。勤怠集計では「退会済み」として表示されます。</li>
+      </ul>
+      <form method="post" class="d-flex flex-wrap gap-2">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">
+          <i class="bi bi-person-dash me-1"></i>グループから外す
+        </button>
+        <a class="btn btn-outline-secondary" href="{% url 'custom_auth_group:members' group.id %}">キャンセル</a>
+      </form>
+    </div>
+  </div>
+{% endblock content %}
