@@ -431,7 +431,11 @@ def assignment_compare(request, group_id):
     # メンバーに見せていない（未公開の）割り当ては予定として扱わない
     assignments = list(
         ShiftAssignment.objects.filter(
-            group=group, work_date__gte=month_from, work_date__lte=month_to, is_published=True
+            group=group,
+            time_slot__group=group,
+            work_date__gte=month_from,
+            work_date__lte=month_to,
+            is_published=True,
         ).select_related("time_slot")
     )
     records = list(
