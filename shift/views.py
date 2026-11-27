@@ -28,6 +28,7 @@ from shift.models import (
     AttendanceSetting,
     DateOpeningSchedule,
     OpeningScheduleType,
+    ShiftAssignment,
     ShiftDeadline,
     ShiftEntry,
     TimeSlot,
@@ -935,18 +936,21 @@ def schedule_settings(request, group_id):
         return redirect("shift:schedule_settings", group_id=group.id)
 
     time_slots = TimeSlot.objects.filter(group=group).order_by("start_time", "name")
-    # シフト希望が1件でも登録されている勤務時間は、過去の集計が崩れないように削除させない
+    # シフト希望・確定シフトが1件でも登録されている勤務時間は、過去の集計が崩れないように削除させない
     entry_counts = dict(
         ShiftEntry.objects.filter(time_slot__group=group)
         .values("time_slot")
         .annotate(entry_count=Count("id"))
         .values_list("time_slot", "entry_count")
     )
+    assigned_slot_ids = set(
+        ShiftAssignment.objects.filter(time_slot__group=group).values_list("time_slot_id", flat=True).distinct()
+    )
     time_slot_rows = [
         {
             "time_slot": time_slot,
             "entry_count": entry_counts.get(time_slot.id, 0),
-            "can_delete": entry_counts.get(time_slot.id, 0) == 0,
+            "can_delete": entry_counts.get(time_slot.id, 0) == 0 and time_slot.id not in assigned_slot_ids,
             "delete_url": reverse("shift:time_slot_delete", args=[group.id, time_slot.id]),
         }
         for time_slot in time_slots
