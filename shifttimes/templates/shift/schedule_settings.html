@@ -12,6 +12,8 @@
       padding: .45rem .5rem;
     }
 
+    .staffing-table td { padding: .25rem; min-width: 3.5rem; }
+
     .schedule-table thead th {
       background: #f1f3f5;
       font-size: .8rem;
@@ -162,6 +164,52 @@
         </tbody>
       </table>
     </div>
+  </section>
+
+  <section class="mb-5" id="staffing">
+    <h2 class="h5 mb-2">必要人数</h2>
+    <p class="text-muted small mb-2">
+      勤務時間・曜日ごとに必要な人数を入れると、シフト提出状況とシフト作成の画面で過不足が色で表示されます。
+      0 または空欄は「必要人数なし」です。シフト入力不可の開講区分の日は 0 人として扱います。
+    </p>
+    {% if staffing_rows %}
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="staffing">
+        <div class="table-responsive mb-2">
+          <table class="schedule-table staffing-table">
+            <thead>
+            <tr>
+              <th scope="col">勤務時間</th>
+              {% for label in weekday_labels %}
+                <th scope="col" class="text-center{% if forloop.counter == 6 %} text-primary{% elif forloop.counter == 7 %} text-danger{% endif %}">{{ label }}</th>
+              {% endfor %}
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in staffing_rows %}
+              <tr>
+                <th scope="row" class="text-nowrap fw-normal">
+                  {{ row.time_slot.name }}
+                  <span class="small text-muted d-block">{{ row.time_slot.start_time|time:'H:i' }}〜{{ row.time_slot.end_time|time:'H:i' }}</span>
+                </th>
+                {% for cell in row.cells %}
+                  <td>
+                    <input class="form-control form-control-sm text-center" type="number" min="0" max="{{ max_required_count }}"
+                           inputmode="numeric" name="{{ cell.name }}" value="{{ cell.value|default:'' }}"
+                           aria-label="{{ row.time_slot.name }} {{ cell.label }}曜日の必要人数" placeholder="-">
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg me-1"></i>必要人数を保存</button>
+      </form>
+    {% else %}
+      <p class="text-muted small">有効な勤務時間がありません。</p>
+    {% endif %}
   </section>
 
   <section class="mb-5">

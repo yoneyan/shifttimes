@@ -10,6 +10,7 @@ from shift.models import (
     ShiftDeadline,
     ShiftEntry,
     SlackNotificationSetting,
+    StaffingRequirement,
     TimeSlot,
     WorkType,
 )
@@ -59,6 +60,18 @@ class DateOpeningScheduleAdmin(SimpleHistoryAdmin):
     list_display = ("id", "group", "work_date", "schedule_type", "updated_at")
     list_filter = ("group", "schedule_type", "work_date")
     search_fields = ("group__name", "note")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(StaffingRequirement)
+class StaffingRequirementAdmin(SimpleHistoryAdmin):
+    fieldsets = (
+        (None, {"fields": ("group", "time_slot", "weekday", "required_count")}),
+        ("audit", {"fields": ("created_at", "updated_at")}),
+    )
+    list_display = ("id", "group", "time_slot", "weekday", "required_count", "updated_at")
+    list_filter = ("group", "weekday")
+    search_fields = ("group__name", "time_slot__name")
     readonly_fields = ("created_at", "updated_at")
 
 

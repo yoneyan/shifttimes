@@ -34,6 +34,9 @@
     color: #0a58ca;
   }
   .as-total-chip-zero { background: #f8f9fa; color: #ced4da; font-weight: 400; }
+  .as-total-chip-ok    { background: #d1e7dd; color: #0f5132; }
+  .as-total-chip-short { background: #f8d7da; color: #b02a37; }
+  .as-total-chip-over  { background: #fff3cd; color: #997404; }
   .as-slot-option + .as-slot-option { border-top: 1px solid #e9ecef; }
 </style>
 {% endblock %}
@@ -90,6 +93,17 @@
         <span class="legend-item"><span class="as-chip as-chip-none hope-available" style="width:1.4rem">○</span>未割り当て（記号は希望）</span>
         <span class="text-muted">セルを押すと割り当てを変更できます</span>
       </div>
+      {% if has_requirements %}
+        <div class="legend-row">
+          <span class="fw-bold">日別人数</span>
+          <span class="legend-item"><span class="as-total-chip as-total-chip-ok" style="width:2.4rem">2/2</span>ちょうど</span>
+          <span class="legend-item"><span class="as-total-chip as-total-chip-short" style="width:2.4rem">1/2</span>不足</span>
+          <span class="legend-item"><span class="as-total-chip as-total-chip-over" style="width:2.4rem">3/2</span>超過</span>
+          <span class="text-muted">
+            この月の不足 <strong class="{% if staffing.short %}text-danger{% endif %}">{{ staffing.short }}</strong> 枠・超過 {{ staffing.over }} 枠
+          </span>
+        </div>
+      {% endif %}
       <div class="legend-row">
         <span class="fw-bold">各セルの段</span>
         {% for sl in slot_legend %}
@@ -171,14 +185,14 @@
         </tbody>
         <tfoot>
           <tr>
-            <td class="col-name fw-bold">日別 割り当て人数</td>
+            <td class="col-name fw-bold">日別 割り当て人数{% if has_requirements %}<span class="d-block small fw-normal text-muted">割り当て/必要</span>{% endif %}</td>
             <td class="col-count"></td>
             {% for dt in day_totals %}
               <td class="col-date{% if dt.is_saturday or dt.is_sunday %} col-weekend{% endif %}{% if dt.is_blocked %} col-blocked{% endif %}{% if dt.is_today %} col-today{% endif %}">
                 <div class="total-stack">
                   {% for sct in dt.slot_counts %}
-                    <span class="as-total-chip{% if not sct.assigned %} as-total-chip-zero{% endif %}"
-                          title="{{ dt.work_date|date:'n/j' }} {{ sct.time_slot.display_label }} / 割り当て {{ sct.assigned }}人">{{ sct.assigned }}</span>
+                    <span class="as-total-chip{% if sct.status %} as-total-chip-{{ sct.status }}{% elif not sct.assigned %} as-total-chip-zero{% endif %}"
+                          title="{{ dt.work_date|date:'n/j' }} {{ sct.time_slot.display_label }} / 割り当て {{ sct.assigned }}人{% if sct.required %}・必要 {{ sct.required }}人{% endif %}">{{ sct.assigned }}{% if sct.required %}<span class="total-required">/{{ sct.required }}</span>{% endif %}</span>
                   {% endfor %}
                 </div>
               </td>

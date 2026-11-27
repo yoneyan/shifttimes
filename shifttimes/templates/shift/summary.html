@@ -92,6 +92,13 @@
     <span class="summary-stat-value text-danger">{{ stats.none }}</span>
     <span class="summary-stat-unit">人</span>
   </div>
+  {% if stats.has_requirements %}
+    <div class="summary-stat summary-stat-none">
+      <span class="summary-stat-label">人数が足りない枠</span>
+      <span class="summary-stat-value{% if stats.short_slots %} text-danger{% endif %}">{{ stats.short_slots }}</span>
+      <span class="summary-stat-unit">枠（日付×勤務時間）</span>
+    </div>
+  {% endif %}
   <div class="summary-stat summary-stat-days">
     <span class="summary-stat-label">入力対象日</span>
     <span class="summary-stat-value">{{ stats.target_days }}</span>
@@ -115,6 +122,14 @@
       <span class="legend-item"><span class="slot-chip slot-chip-empty" style="width:1.4rem">&nbsp;</span>未回答</span>
       <span class="text-muted">* が付いたものはメモあり（マウスを乗せると表示）</span>
     </div>
+    {% if stats.has_requirements %}
+      <div class="legend-row">
+        <span class="fw-bold">日別人数</span>
+        <span class="legend-item"><span class="total-chip" style="width:2.4rem">3/2</span>足りている</span>
+        <span class="legend-item"><span class="total-chip total-chip-short-maybe" style="width:2.4rem">1/2</span>要相談を含めれば足りる</span>
+        <span class="legend-item"><span class="total-chip total-chip-short" style="width:2.4rem">0/2</span>足りない</span>
+      </div>
+    {% endif %}
     <div class="legend-row">
       <span class="fw-bold">各セルの段</span>
       {% for sl in slot_legend %}
@@ -206,7 +221,7 @@
       </tbody>
       <tfoot>
         <tr>
-          <td class="col-name fw-bold">日別 勤務可能人数</td>
+          <td class="col-name fw-bold">日別 勤務可能人数{% if stats.has_requirements %}<span class="d-block small fw-normal text-muted">勤務可能/必要</span>{% endif %}</td>
           <td class="col-count"></td>
           {% for dt in day_totals %}
             <td class="col-date{% if dt.is_saturday or dt.is_sunday %} col-weekend{% endif %}{% if dt.is_blocked %} col-blocked{% endif %}{% if dt.is_today %} col-today{% endif %}">
@@ -215,8 +230,8 @@
               {% else %}
                 <div class="total-stack">
                   {% for sct in dt.slot_counts %}
-                    <span class="total-chip{% if not sct.available %} total-chip-zero{% endif %}"
-                          title="{{ dt.work_date|date:'n/j' }} {{ sct.time_slot.start_time|time:'H:i' }}〜{{ sct.time_slot.end_time|time:'H:i' }} / 勤務可能 {{ sct.available }}人・要相談 {{ sct.maybe }}人">{{ sct.available }}</span>
+                    <span class="total-chip{% if sct.status %} total-chip-{{ sct.status }}{% elif not sct.available %} total-chip-zero{% endif %}"
+                          title="{{ dt.work_date|date:'n/j' }} {{ sct.time_slot.start_time|time:'H:i' }}〜{{ sct.time_slot.end_time|time:'H:i' }} / 勤務可能 {{ sct.available }}人・要相談 {{ sct.maybe }}人{% if sct.required %}・必要 {{ sct.required }}人{% endif %}">{{ sct.available }}{% if sct.required %}<span class="total-required">/{{ sct.required }}</span>{% endif %}</span>
                   {% endfor %}
                 </div>
               {% endif %}

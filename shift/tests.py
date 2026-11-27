@@ -21,9 +21,11 @@ from shift.models import (
     ShiftDeadline,
     ShiftEntry,
     SlackNotificationSetting,
+    StaffingRequirement,
     TimeSlot,
     WorkType,
     find_overlapping_record,
+    staffing_status,
 )
 
 
@@ -2892,3 +2894,143 @@ class ShiftAssignmentTests(TestCase):
 
         self.assertFalse(sent)
         send.assert_not_called()
+
+
+class StaffingRequirementTests(TestCase):
+    """必要人数の設定と過不足の表示"""
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.admin_user = user_model.objects.create(
+            username="admin", username_jp="管理者", email="admin@example.com", is_active=True
+        )
+        self.member = user_model.objects.create(
+            username="member", username_jp="メンバー", email="member@example.com", is_active=True
+        )
+        self.other = user_model.objects.create(
+            username="other", username_jp="同僚", email="other@example.com", is_active=True
+        )
+        self.group = Group.objects.create(name="shop", name_jp="店舗")
+        UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
+        UserGroup.objects.create(user=self.member, group=self.group)
+        UserGroup.objects.create(user=self.other, group=self.group)
+        self.morning = TimeSlot.objects.create(
+            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0)
+        )
+        self.settings_url = reverse("shift:schedule_settings", args=[self.group.id])
+        self.today = timezone.now().date()
+        self.month = self.today.replace(day=1)
+
+    def _require(self, work_date, count):
+        return StaffingRequirement.objects.create(
+            group=self.group, time_slot=self.morning, weekday=work_date.weekday(), required_count=count
+        )
+
+    def _slot_total(self, response, work_date):
+        day = next(day for day in response.context["day_totals"] if day["work_date"] == work_date)
+        return day["slot_counts"][0]
+
+    def test_admin_can_save_requirements(self):
+        self.client.force_login(self.admin_user)
+
+        self.client.post(
+            self.settings_url,
+            {"action": "staffing", "required_%d_0" % self.morning.id: "2", "required_%d_5" % self.morning.id: ""},
+        )
+
+        self.assertEqual(
+            list(StaffingRequirement.objects.values_list("weekday", "required_count")),
+            [(0, 2)],
+        )
+
+    def test_zero_removes_requirement(self):
+        StaffingRequirement.objects.create(group=self.group, time_slot=self.morning, weekday=0, required_count=3)
+        self.client.force_login(self.admin_user)
+
+        self.client.post(self.settings_url, {"action": "staffing", "required_%d_0" % self.morning.id: "0"})
+
+        self.assertFalse(StaffingRequirement.objects.exists())
+
+    def test_invalid_value_saves_nothing(self):
+        StaffingRequirement.objects.create(group=self.group, time_slot=self.morning, weekday=0, required_count=3)
+        self.client.force_login(self.admin_user)
+
+        self.client.post(
+            self.settings_url,
+            {"action": "staffing", "required_%d_0" % self.morning.id: "1", "required_%d_1" % self.morning.id: "-1"},
+        )
+
+        self.assertEqual(StaffingRequirement.objects.get().required_count, 3)
+
+    def test_member_cannot_save_requirements(self):
+        self.client.force_login(self.member)
+
+        response = self.client.post(self.settings_url, {"action": "staffing", "required_%d_0" % self.morning.id: "2"})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(StaffingRequirement.objects.exists())
+
+    def test_settings_page_shows_saved_values(self):
+        StaffingRequirement.objects.create(group=self.group, time_slot=self.morning, weekday=2, required_count=4)
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.settings_url)
+
+        cells = response.context["staffing_rows"][0]["cells"]
+        self.assertEqual([cell["value"] for cell in cells], [0, 0, 4, 0, 0, 0, 0])
+
+    def test_staffing_status(self):
+        self.assertEqual(staffing_status(1, 0), "")
+        self.assertEqual(staffing_status(1, 2), "short")
+        self.assertEqual(staffing_status(2, 2), "ok")
+        self.assertEqual(staffing_status(3, 2), "over")
+
+    def test_summary_compares_available_with_required(self):
+        self._require(self.month, 2)
+        ShiftEntry.objects.create(
+            group=self.group, user=self.member, work_date=self.month, time_slot=self.morning, status="available"
+        )
+        ShiftEntry.objects.create(
+            group=self.group, user=self.other, work_date=self.month, time_slot=self.morning, status="maybe"
+        )
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(reverse("shift:summary", args=[self.group.id]), {"from": self.month.isoformat()})
+
+        total = self._slot_total(response, self.month)
+        self.assertEqual((total["available"], total["required"], total["status"]), (1, 2, "short-maybe"))
+        self.assertGreaterEqual(response.context["stats"]["short_slots"], 1)
+        self.assertContains(response, "人数が足りない枠")
+
+    def test_blocked_day_requires_nobody(self):
+        self._require(self.month, 2)
+        blocked = OpeningScheduleType.objects.create(group=self.group, name="休校", blocks_shift_input=True)
+        DateOpeningSchedule.objects.create(group=self.group, work_date=self.month, schedule_type=blocked)
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(reverse("shift:summary", args=[self.group.id]), {"from": self.month.isoformat()})
+
+        total = self._slot_total(response, self.month)
+        self.assertEqual((total["required"], total["status"]), (0, ""))
+
+    def test_assignment_page_compares_assigned_with_required(self):
+        self._require(self.month, 1)
+        ShiftAssignment.objects.create(group=self.group, user=self.member, work_date=self.month, time_slot=self.morning)
+        ShiftAssignment.objects.create(group=self.group, user=self.other, work_date=self.month, time_slot=self.morning)
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(
+            reverse("shift:assignment", args=[self.group.id]), {"month": self.month.strftime("%Y-%m")}
+        )
+
+        total = self._slot_total(response, self.month)
+        self.assertEqual((total["assigned"], total["required"], total["status"]), (2, 1, "over"))
+        self.assertGreaterEqual(response.context["staffing"]["over"], 1)
+
+    def test_no_requirements_hides_comparison(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(reverse("shift:assignment", args=[self.group.id]))
+
+        self.assertFalse(response.context["has_requirements"])
+        self.assertNotContains(response, "割り当て/必要")
