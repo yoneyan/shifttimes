@@ -1,8 +1,10 @@
 """確定シフト（管理者によるシフトの割り当てと公開、メンバー向けの閲覧）"""
 
 from collections import defaultdict
+from datetime import timedelta
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import redirect, render
@@ -11,8 +13,16 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from custom_auth.models import UserGroup
-from shift import slack
-from shift.models import ShiftAssignment, ShiftEntry, TimeSlot, minutes_to_hhmm, staffing_status
+from shift import compare, slack
+from shift.models import (
+    AttendanceRecord,
+    AttendanceSetting,
+    ShiftAssignment,
+    ShiftEntry,
+    TimeSlot,
+    minutes_to_hhmm,
+    staffing_status,
+)
 from shift.views import (
     _active_time_slots,
     _admin_group_landing,
@@ -396,3 +406,118 @@ def assignment_member(request, group_id):
         **_month_nav_context(current_month, today),
     }
     return render(request, "shift/assignment_member.html", context)
+
+
+GRACE_OPTIONS = (0, 5, 10, 15, 30)
+DEFAULT_GRACE_MINUTES = 5
+
+
+def _grace_minutes(value):
+    try:
+        minutes = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_GRACE_MINUTES
+    return minutes if minutes in GRACE_OPTIONS else DEFAULT_GRACE_MINUTES
+
+
+def _following_records(group, records, date_to):
+    """退勤が未記録のまま対象期間が終わるメンバーについて、期間後の最初の勤怠を返す
+
+    退勤の打刻漏れかどうかは「後に別の勤怠があるか」で決める（compare._bound_open_records）。
+    期間の最後の勤怠が退勤未記録なら、翌月の勤怠も見ないと勤務中とみなして翌月 1 日のシフトまで
+    覆ってしまうので、照合のためだけに次の勤怠を読み込む（一覧や件数には使わない）。
+    最後・最初の勤怠は、比較に使える（compare.record_span が None でない）ものの中から選ぶ。
+    """
+    last_by_user = {}
+    for record in records:
+        span = compare.record_span(record)
+        if span is None:
+            continue
+        current = last_by_user.get(record.user_id)
+        if current is None or span[0] > current[0]:
+            last_by_user[record.user_id] = span
+    following = []
+    for user_id, span in last_by_user.items():
+        if span[1] is not None:
+            continue
+        later = (
+            AttendanceRecord.objects.filter(group=group, user_id=user_id, work_date__gt=date_to)
+            .exclude(start_time=None)
+            .order_by("work_date", "start_time", "id")
+        )
+        next_record = next((record for record in later.iterator() if compare.record_span(record) is not None), None)
+        if next_record is not None:
+            following.append(next_record)
+    return following
+
+
+@login_required
+def assignment_compare(request, group_id):
+    """管理者向けの予実比較（公開済みの確定シフトと勤怠の食い違い）"""
+    group = _get_group_for_user(request, group_id, require_admin=True)
+    today = _today()
+    current_month = _month_from_value(request.GET.get("month", ""), today)
+    month_from, month_to = _month_bounds(current_month)
+    grace = _grace_minutes(request.GET.get("grace"))
+
+    # メンバーに見せていない（未公開の）割り当ては予定として扱わない
+    # 月末の夜から続く勤務が翌月 1 日の早朝のシフトに重なることがあるので、翌日のシフトも照合に使う
+    nearby_assignments = list(
+        ShiftAssignment.objects.filter(
+            group=group,
+            time_slot__group=group,
+            work_date__gte=month_from,
+            work_date__lte=month_to + timedelta(days=1),
+            is_published=True,
+        ).select_related("time_slot")
+    )
+    assignments = [assignment for assignment in nearby_assignments if assignment.work_date <= month_to]
+    # 前月末の夜から続く勤務が月初の早朝のシフトに重なることがあるので、前日の勤怠も比べる
+    nearby_records = list(
+        AttendanceRecord.objects.filter(
+            group=group, work_date__gte=month_from - timedelta(days=1), work_date__lte=month_to
+        ).select_related("work_type")
+    )
+    records = [record for record in nearby_records if record.work_date >= month_from]
+    nearby_records += _following_records(group, nearby_records, month_to)
+    discrepancies = compare.compare(nearby_assignments, nearby_records, today, grace, month_from, month_to)
+
+    # 食い違いの集計は、グループから外れた人も含めて予定か実績のある全員を対象にする
+    member_ids = set(UserGroup.objects.filter(group=group).values_list("user_id", flat=True))
+    user_ids = {item.user_id for item in assignments} | {item.user_id for item in records}
+    users = {user.id: user for user in get_user_model().objects.filter(id__in=user_ids)}
+    for item in discrepancies:
+        item.user = users[item.user_id]
+
+    rows = {}
+    for user_id in user_ids:
+        rows[user_id] = {
+            "user": users[user_id],
+            "is_former_member": user_id not in member_ids,
+            "shift_count": 0,
+            "counts": dict.fromkeys(compare.KIND_ORDER, 0),
+        }
+    for item in assignments:
+        rows[item.user_id]["shift_count"] += 1
+    for item in discrepancies:
+        rows[item.user_id]["counts"][item.kind] += 1
+    member_rows = sorted(rows.values(), key=lambda row: (row["user"].get_display_name(), row["user"].username))
+    for row in member_rows:
+        row["count_list"] = [row["counts"][kind] for kind in compare.KIND_ORDER]
+
+    context = {
+        "group": group,
+        "grace": grace,
+        "grace_options": GRACE_OPTIONS,
+        "kinds": [{"key": kind, "label": compare.KIND_LABELS[kind]} for kind in compare.KIND_ORDER],
+        "totals": [
+            {"key": kind, "label": compare.KIND_LABELS[kind], "count": sum(1 for d in discrepancies if d.kind == kind)}
+            for kind in compare.KIND_ORDER
+        ],
+        "discrepancies": discrepancies,
+        "member_rows": member_rows,
+        "has_assignments": bool(assignments),
+        "attendance_enabled": AttendanceSetting.objects.filter(group=group, is_enabled=True).exists(),
+        **_month_nav_context(current_month, today),
+    }
+    return render(request, "shift/assignment_compare.html", context)

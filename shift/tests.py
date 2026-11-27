@@ -11,7 +11,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from custom_auth.models import Group, UserGroup
-from shift import slack
+from shift import compare, slack
 from shift.models import (
     AttendanceRecord,
     AttendanceSetting,
@@ -2965,6 +2965,17 @@ class StaffingRequirementTests(TestCase):
 
         self.assertFalse(StaffingRequirement.objects.exists())
 
+    def test_fields_missing_from_form_are_kept(self):
+        StaffingRequirement.objects.create(group=self.group, time_slot=self.morning, weekday=3, required_count=2)
+        self.client.force_login(self.admin_user)
+
+        self.client.post(self.settings_url, {"action": "staffing", "required_%d_0" % self.morning.id: "1"})
+
+        self.assertEqual(
+            sorted(StaffingRequirement.objects.values_list("weekday", "required_count")),
+            [(0, 1), (3, 2)],
+        )
+
     def test_invalid_value_saves_nothing(self):
         StaffingRequirement.objects.create(group=self.group, time_slot=self.morning, weekday=0, required_count=3)
         self.client.force_login(self.admin_user)
@@ -3073,3 +3084,216 @@ class StaffingRequirementTests(TestCase):
 
         self.assertFalse(response.context["has_requirements"])
         self.assertNotContains(response, "割り当て/必要")
+
+
+class ShiftCompareTests(TestCase):
+    """確定シフトと勤怠の予実比較"""
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.admin_user = user_model.objects.create(
+            username="admin", username_jp="管理者", email="admin@example.com", is_active=True
+        )
+        self.member = user_model.objects.create(
+            username="member", username_jp="メンバー", email="member@example.com", is_active=True
+        )
+        self.group = Group.objects.create(name="shop", name_jp="店舗")
+        UserGroup.objects.create(user=self.admin_user, group=self.group, is_admin=True)
+        UserGroup.objects.create(user=self.member, group=self.group)
+        AttendanceSetting.objects.create(group=self.group, is_enabled=True)
+        self.morning = TimeSlot.objects.create(
+            group=self.group, name="早番", start_time=time(9, 0), end_time=time(13, 0)
+        )
+        self.noon = TimeSlot.objects.create(group=self.group, name="中番", start_time=time(13, 0), end_time=time(17, 0))
+        self.today = timezone.now().date()
+        self.day = date(2026, 3, 10)
+        self.url = reverse("shift:assignment_compare", args=[self.group.id])
+
+    def _assign(self, work_date, time_slot, published=True):
+        return ShiftAssignment.objects.create(
+            group=self.group, user=self.member, work_date=work_date, time_slot=time_slot, is_published=published
+        )
+
+    def _record(self, work_date, start, end):
+        return AttendanceRecord.objects.create(
+            group=self.group, user=self.member, work_date=work_date, start_time=start, end_time=end
+        )
+
+    def _kinds(self, grace=5, today=None):
+        return [
+            (item.kind, item.minutes)
+            for item in compare.compare(
+                ShiftAssignment.objects.filter(is_published=True).select_related("time_slot"),
+                AttendanceRecord.objects.all(),
+                today or date(2026, 4, 1),
+                grace,
+            )
+        ]
+
+    def test_on_time_has_no_discrepancy(self):
+        self._assign(self.day, self.morning)
+        self._record(self.day, time(9, 0), time(13, 0))
+
+        self.assertEqual(self._kinds(), [])
+
+    def test_absent_only_for_past_days(self):
+        self._assign(self.day, self.morning)
+
+        self.assertEqual(self._kinds(today=date(2026, 4, 1)), [("absent", 0)])
+        self.assertEqual(self._kinds(today=self.day), [])
+
+    def test_late_and_early_with_grace(self):
+        self._assign(self.day, self.morning)
+        self._record(self.day, time(9, 10), time(12, 57))
+
+        self.assertEqual(self._kinds(grace=5), [("late", 10)])
+        self.assertEqual(self._kinds(grace=0), [("late", 10), ("early", 3)])
+        self.assertEqual(self._kinds(grace=15), [])
+
+    def test_working_record_skips_early_check(self):
+        self._assign(self.day, self.morning)
+        self._record(self.day, time(9, 0), None)
+
+        self.assertEqual(self._kinds(grace=0), [])
+
+    def test_one_record_covers_consecutive_slots(self):
+        self._assign(self.day, self.morning)
+        self._assign(self.day, self.noon)
+        self._record(self.day, time(9, 0), time(17, 0))
+
+        self.assertEqual(self._kinds(grace=0), [])
+
+    def test_unscheduled_record(self):
+        self._record(self.day, time(18, 0), time(20, 0))
+
+        self.assertEqual(self._kinds(), [("unscheduled", 0)])
+
+    def test_unpublished_assignment_is_ignored(self):
+        self._assign(self.day, self.morning, published=False)
+
+        self.assertEqual(self._kinds(), [])
+
+    def test_zero_length_record_does_not_cover_shift(self):
+        self._assign(self.day, self.morning)
+        self._record(self.day, time(10, 0), time(10, 0))
+
+        self.assertEqual(self._kinds(), [("absent", 0)])
+
+    def test_overnight_record_covers_early_shift_of_next_day(self):
+        early = TimeSlot.objects.create(group=self.group, name="早朝", start_time=time(0, 0), end_time=time(2, 0))
+        next_day = self.day + timedelta(days=1)
+        self._assign(next_day, early)
+        self._record(self.day, time(23, 0), time(2, 0))
+
+        kinds = [
+            (item.kind, item.work_date)
+            for item in compare.compare(
+                ShiftAssignment.objects.select_related("time_slot"),
+                AttendanceRecord.objects.all(),
+                date(2026, 4, 1),
+                5,
+            )
+        ]
+
+        self.assertEqual(kinds, [])
+
+    def test_page_uses_previous_month_record_for_first_day(self):
+        early = TimeSlot.objects.create(group=self.group, name="早朝", start_time=time(0, 0), end_time=time(2, 0))
+        first = date(2026, 4, 1)
+        self._assign(first, early)
+        self._record(first - timedelta(days=1), time(23, 0), time(2, 0))
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.url, {"month": "2026-04"})
+
+        # 前月末の勤怠で月初のシフトを満たし、前月の勤怠はシフト外勤務としても出さない
+        self.assertEqual(response.context["discrepancies"], [])
+
+    def test_stale_open_record_does_not_hide_later_lateness(self):
+        next_day = self.day + timedelta(days=1)
+        self._assign(next_day, self.morning)
+        self._record(self.day, time(10, 0), None)
+        self._record(next_day, time(9, 30), time(12, 30))
+
+        self.assertEqual(self._kinds(grace=0), [("unscheduled", 0), ("late", 30), ("early", 30)])
+
+    def test_stale_open_record_does_not_hide_absence_days_later(self):
+        later = self.day + timedelta(days=3)
+        self._assign(later, self.morning)
+        self._record(self.day, time(10, 0), None)
+
+        self.assertEqual(self._kinds(), [("unscheduled", 0), ("absent", 0)])
+
+    def test_month_end_overnight_record_matches_next_month_shift(self):
+        early = TimeSlot.objects.create(group=self.group, name="早朝", start_time=time(0, 0), end_time=time(2, 0))
+        last = date(2026, 3, 31)
+        self._assign(last + timedelta(days=1), early)
+        self._record(last, time(23, 0), time(2, 0))
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.url, {"month": "2026-03"})
+
+        self.assertEqual(response.context["discrepancies"], [])
+        self.assertEqual(response.context["member_rows"][0]["shift_count"], 0)
+
+    def test_month_end_open_record_is_bounded_by_next_month_record(self):
+        early = TimeSlot.objects.create(group=self.group, name="早朝", start_time=time(0, 0), end_time=time(2, 0))
+        last = date(2026, 3, 31)
+        self._assign(last + timedelta(days=1), early)
+        stale = self._record(last, time(23, 0), None)
+        self._record(last + timedelta(days=1), time(9, 0), time(12, 0))
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.url, {"month": "2026-03"})
+
+        # 翌月の出勤があるので 3/31 の勤怠は打刻漏れ。4/1 のシフトは覆わず、3 月のシフト外勤務になる
+        self.assertEqual(
+            [(item.kind, item.record.id) for item in response.context["discrepancies"]], [("unscheduled", stale.id)]
+        )
+        self.assertEqual(response.context["member_rows"][0]["count_list"], [0, 0, 0, 1])
+
+    def test_month_end_bound_ignores_records_that_cannot_be_compared(self):
+        early = TimeSlot.objects.create(group=self.group, name="早朝", start_time=time(0, 0), end_time=time(2, 0))
+        last = date(2026, 3, 31)
+        self._assign(last + timedelta(days=1), early)
+        stale = self._record(last, time(23, 0), None)
+        self._record(last, time(23, 30), time(23, 30))  # 勤務時間 0 分は最後の勤怠として扱わない
+        self._record(last + timedelta(days=1), time(8, 0), time(8, 0))  # 翌月の最初の勤怠としても扱わない
+        self._record(last + timedelta(days=1), time(9, 0), time(12, 0))
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.url, {"month": "2026-03"})
+
+        self.assertEqual(
+            [(item.kind, item.record.id) for item in response.context["discrepancies"]], [("unscheduled", stale.id)]
+        )
+
+    def test_page_requires_admin(self):
+        self.client.force_login(self.member)
+
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+
+    def test_page_lists_discrepancies_and_counts(self):
+        past = self.today - timedelta(days=1)
+        if past.month != self.today.month:
+            past = self.today
+        self._assign(past, self.morning)
+        self._record(past, time(9, 30), time(13, 0))
+        self._record(past, time(18, 0), time(19, 0))
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.url, {"month": past.strftime("%Y-%m"), "grace": "0"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item.kind for item in response.context["discrepancies"]], ["late", "unscheduled"])
+        row = response.context["member_rows"][0]
+        self.assertEqual(row["shift_count"], 1)
+        self.assertEqual(row["count_list"], [0, 1, 0, 1])
+        self.assertContains(response, "30分遅れて出勤")
+
+    def test_invalid_grace_falls_back_to_default(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(self.url, {"grace": "999"})
+
+        self.assertEqual(response.context["grace"], 5)

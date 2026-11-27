@@ -851,12 +851,16 @@ def _staffing_field_name(time_slot_id, weekday):
 
 
 def _save_staffing_requirements(request, group):
-    """必要人数の表をまとめて保存する。空欄と 0 は「必要人数なし」として登録を消す"""
+    """必要人数の表をまとめて保存する。空欄と 0 は「必要人数なし」として登録を消す（フォームに無い欄は変更しない）"""
     time_slots = list(TimeSlot.objects.filter(group=group, is_active=True))
     values = {}
     for time_slot in time_slots:
         for weekday, _label in WEEKDAY_CHOICES:
-            raw = request.POST.get(_staffing_field_name(time_slot.id, weekday), "").strip()
+            field_name = _staffing_field_name(time_slot.id, weekday)
+            if field_name not in request.POST:
+                # 画面を開いたあとで有効に戻された勤務時間など、フォームに無い欄は変更しない
+                continue
+            raw = request.POST[field_name].strip()
             try:
                 value = int(raw) if raw else 0
             except ValueError:

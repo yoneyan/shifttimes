@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% block extrahead %}
+<style>
+  .kind-badge { font-size: .75rem; }
+  .kind-absent      { background: #b02a37; color: #fff; }
+  .kind-late        { background: #a44e05; color: #fff; }
+  .kind-early       { background: #ffc107; color: #212529; }
+  .kind-unscheduled { background: #5c636a; color: #fff; }
+  .compare-count-zero { color: #6c757d; }
+</style>
+{% endblock %}
+
+{% block title %}予実比較 | {% endblock %}
+{% block page_title %}予実比較{% endblock %}
+{% block page_subtitle %}
+  <p class="text-muted small mb-0">{{ group.name_jp }} / {{ group.name }}</p>
+{% endblock %}
+{% block page_actions %}
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'shift:assignment' group.id %}?month={{ current_month_value }}">
+    <i class="bi bi-calendar-check me-1"></i>シフト作成
+  </a>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'shift:attendance_summary' group.id %}?month={{ current_month_value }}">
+    <i class="bi bi-stopwatch me-1"></i>勤怠集計
+  </a>
+{% endblock %}
+{% block content %}
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div class="btn-group" role="group" aria-label="月の移動">
+      <a class="btn btn-outline-secondary btn-sm" href="?month={{ prev_month|date:'Y-m' }}&amp;grace={{ grace }}" aria-label="前の月">
+        <i class="bi bi-chevron-left"></i>
+      </a>
+      <a class="btn btn-outline-secondary btn-sm {% if is_current_month %}disabled{% endif %}"
+         href="?month={{ today_month_value }}&amp;grace={{ grace }}">今日</a>
+      <a class="btn btn-outline-secondary btn-sm" href="?month={{ next_month|date:'Y-m' }}&amp;grace={{ grace }}" aria-label="次の月">
+        <i class="bi bi-chevron-right"></i>
+      </a>
+    </div>
+    <h2 class="h5 mb-0">{{ current_month|date:'Y年n月' }}</h2>
+    <form method="get" class="d-flex align-items-center gap-2">
+      <input type="hidden" name="month" value="{{ current_month_value }}">
+      <label class="small text-nowrap" for="compare-grace">遅刻・早退の猶予</label>
+      <select class="form-select form-select-sm" id="compare-grace" name="grace" style="width:auto" onchange="this.form.submit()">
+        {% for option in grace_options %}
+          <option value="{{ option }}" {% if option == grace %}selected{% endif %}>{{ option }}分</option>
+        {% endfor %}
+      </select>
+      <noscript><button class="btn btn-primary btn-sm" type="submit">表示</button></noscript>
+    </form>
+  </div>
+
+  {% if not attendance_enabled %}
+    <div class="alert alert-warning small py-2">
+      勤怠管理が有効になっていません。勤怠が記録されないため、公開済みのシフトはすべて欠勤として表示されます。
+      <a href="{% url 'shift:attendance_settings' group.id %}">勤怠設定</a>
+    </div>
+  {% endif %}
+
+  {% if not has_assignments and not member_rows %}
+    <div class="alert alert-info">この月は公開済みの確定シフトも勤怠もありません。</div>
+  {% else %}
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      {% for total in totals %}
+        <span class="badge kind-badge kind-{{ total.key }}">{{ total.label }} {{ total.count }}件</span>
+      {% endfor %}
+    </div>
+
+    <section class="mb-4">
+      <h2 class="h6 fw-bold">メンバー別</h2>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead class="table-light">
+          <tr>
+            <th scope="col">メンバー</th>
+            <th scope="col" class="text-end">シフト</th>
+            {% for kind in kinds %}<th scope="col" class="text-end">{{ kind.label }}</th>{% endfor %}
+          </tr>
+          </thead>
+          <tbody>
+          {% for row in member_rows %}
+            <tr>
+              <th scope="row" class="fw-normal">
+                {{ row.user.get_display_name }}
+                {% if row.is_former_member %}<span class="badge text-bg-secondary fw-normal">退会済み</span>{% endif %}
+              </th>
+              <td class="text-end">{{ row.shift_count }}</td>
+              {% for count in row.count_list %}
+                <td class="text-end{% if not count %} compare-count-zero{% endif %}">{{ count }}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="h6 fw-bold">食い違いの一覧</h2>
+      {% if discrepancies %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead class="table-light">
+            <tr>
+              <th scope="col">日付</th>
+              <th scope="col">メンバー</th>
+              <th scope="col">種類</th>
+              <th scope="col">シフト</th>
+              <th scope="col">詳細</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for item in discrepancies %}
+              <tr>
+                <td class="text-nowrap">{{ item.work_date|date:'n/j (D)' }}</td>
+                <td>{{ item.user.get_display_name }}</td>
+                <td><span class="badge kind-badge kind-{{ item.kind }}">{{ item.label }}</span></td>
+                <td class="small">{% if item.assignment %}{{ item.assignment.time_slot.display_label }}{% else %}-{% endif %}</td>
+                <td class="small">
+                  {% if item.kind == 'late' %}
+                    {{ item.minutes }}分遅れて出勤
+                  {% elif item.kind == 'early' %}
+                    {{ item.minutes }}分早く退勤
+                  {% elif item.kind == 'absent' %}
+                    この時間帯の勤怠がありません
+                  {% else %}
+                    勤怠 {{ item.record.start_time|time:'H:i'|default:'--:--' }}〜{{ item.record.end_time|time:'H:i'|default:'--:--' }}{% if item.record.work_type %}（{{ item.record.work_type.name }}）{% endif %}
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-muted small">食い違いはありません。</p>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <p class="text-muted small mt-3 mb-0">
+    <i class="bi bi-info-circle me-1"></i>
+    公開済みの確定シフトと勤怠を比べています（未公開の割り当ては対象外）。欠勤は今日より前の日だけ判定し、
+    勤務中（退勤が未記録）の勤怠は早退の判定をしません。シフト外勤務は、その日のどのシフトにも重ならない勤怠です。
+  </p>
+{% endblock content %}

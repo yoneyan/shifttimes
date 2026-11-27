@@ -22,6 +22,7 @@ urlpatterns = [
     path("assignment/", assignment_views.assignment_index, name="assignment_index"),
     path("assignment/<int:group_id>/", assignment_views.assignment, name="assignment"),
     path("assignment/<int:group_id>/view/", assignment_views.assignment_member, name="assignment_member"),
+    path("assignment/<int:group_id>/compare/", assignment_views.assignment_compare, name="assignment_compare"),
     path("attendance/", attendance_views.attendance_index, name="attendance_index"),
     path("attendance/admin/", attendance_views.attendance_admin_index, name="attendance_admin_index"),
     path("attendance/<int:group_id>/", attendance_views.attendance, name="attendance"),
