@@ -3,6 +3,7 @@
 from collections import defaultdict
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import redirect, render
@@ -11,8 +12,16 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from custom_auth.models import UserGroup
-from shift import slack
-from shift.models import ShiftAssignment, ShiftEntry, TimeSlot, minutes_to_hhmm, staffing_status
+from shift import compare, slack
+from shift.models import (
+    AttendanceRecord,
+    AttendanceSetting,
+    ShiftAssignment,
+    ShiftEntry,
+    TimeSlot,
+    minutes_to_hhmm,
+    staffing_status,
+)
 from shift.views import (
     _active_time_slots,
     _admin_group_landing,
@@ -396,3 +405,78 @@ def assignment_member(request, group_id):
         **_month_nav_context(current_month, today),
     }
     return render(request, "shift/assignment_member.html", context)
+
+
+GRACE_OPTIONS = (0, 5, 10, 15, 30)
+DEFAULT_GRACE_MINUTES = 5
+
+
+def _grace_minutes(value):
+    try:
+        minutes = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_GRACE_MINUTES
+    return minutes if minutes in GRACE_OPTIONS else DEFAULT_GRACE_MINUTES
+
+
+@login_required
+def assignment_compare(request, group_id):
+    """管理者向けの予実比較（公開済みの確定シフトと勤怠の食い違い）"""
+    group = _get_group_for_user(request, group_id, require_admin=True)
+    today = _today()
+    current_month = _month_from_value(request.GET.get("month", ""), today)
+    month_from, month_to = _month_bounds(current_month)
+    grace = _grace_minutes(request.GET.get("grace"))
+
+    # メンバーに見せていない（未公開の）割り当ては予定として扱わない
+    assignments = list(
+        ShiftAssignment.objects.filter(
+            group=group, work_date__gte=month_from, work_date__lte=month_to, is_published=True
+        ).select_related("time_slot")
+    )
+    records = list(
+        AttendanceRecord.objects.filter(group=group, work_date__gte=month_from, work_date__lte=month_to).select_related(
+            "work_type"
+        )
+    )
+    discrepancies = compare.compare(assignments, records, today, grace)
+
+    # 食い違いの集計は、グループから外れた人も含めて予定か実績のある全員を対象にする
+    member_ids = set(UserGroup.objects.filter(group=group).values_list("user_id", flat=True))
+    user_ids = {item.user_id for item in assignments} | {item.user_id for item in records}
+    users = {user.id: user for user in get_user_model().objects.filter(id__in=user_ids)}
+    for item in discrepancies:
+        item.user = users[item.user_id]
+
+    rows = {}
+    for user_id in user_ids:
+        rows[user_id] = {
+            "user": users[user_id],
+            "is_former_member": user_id not in member_ids,
+            "shift_count": 0,
+            "counts": dict.fromkeys(compare.KIND_ORDER, 0),
+        }
+    for item in assignments:
+        rows[item.user_id]["shift_count"] += 1
+    for item in discrepancies:
+        rows[item.user_id]["counts"][item.kind] += 1
+    member_rows = sorted(rows.values(), key=lambda row: (row["user"].get_display_name(), row["user"].username))
+    for row in member_rows:
+        row["count_list"] = [row["counts"][kind] for kind in compare.KIND_ORDER]
+
+    context = {
+        "group": group,
+        "grace": grace,
+        "grace_options": GRACE_OPTIONS,
+        "kinds": [{"key": kind, "label": compare.KIND_LABELS[kind]} for kind in compare.KIND_ORDER],
+        "totals": [
+            {"key": kind, "label": compare.KIND_LABELS[kind], "count": sum(1 for d in discrepancies if d.kind == kind)}
+            for kind in compare.KIND_ORDER
+        ],
+        "discrepancies": discrepancies,
+        "member_rows": member_rows,
+        "has_assignments": bool(assignments),
+        "attendance_enabled": AttendanceSetting.objects.filter(group=group, is_enabled=True).exists(),
+        **_month_nav_context(current_month, today),
+    }
+    return render(request, "shift/assignment_compare.html", context)
